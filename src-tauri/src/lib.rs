@@ -59,13 +59,18 @@ fn init_tracing_file() {
         }
     };
 
-    let _ = tracing_subscriber::fmt()
+    if let Err(e) = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_writer(std::sync::Mutex::new(file))
-        .try_init();
+        .try_init()
+    {
+        eprintln!("AutoVersion: tracing subscriber not installed: {e}");
+    } else {
+        eprintln!("AutoVersion: file logging at {}", log_file.display());
+    }
 }
 
 fn toggle_main_window(app: &AppHandle) {
@@ -135,6 +140,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing_file();
+    tracing::info!(
+        "AutoVersion starting up (version {})",
+        env!("CARGO_PKG_VERSION")
+    );
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -198,6 +207,7 @@ pub fn run() {
             commands::config::preview_folder_matches,
             commands::history::list_watched_files,
             commands::history::list_snapshots,
+            commands::history::list_recent_changes,
             commands::history::get_snapshot_content,
             commands::history::get_current_content,
             commands::actions::restore_snapshot,
@@ -205,6 +215,8 @@ pub fn run() {
             commands::actions::pause_watching,
             commands::actions::resume_watching,
             commands::actions::reveal_path,
+            commands::actions::open_path,
+            commands::actions::open_watched_file,
             commands::status::get_status,
             commands::status::get_storage_usage,
             commands::status::run_retention_now,

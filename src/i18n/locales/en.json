@@ -1,0 +1,201 @@
+{
+  "nav": {
+    "folders": "Folders",
+    "activity": "Activity",
+    "settings": "Settings",
+    "help": "Help",
+    "about": "About"
+  },
+  "common": {
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "next": "Next",
+    "back": "Back",
+    "done": "Done",
+    "skip": "Skip setup",
+    "change": "Change…",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "wizard": {
+    "step": "Step {{n}} of {{total}}",
+    "welcome": {
+      "title": "AutoVersion keeps a history of every save, so nothing ever gets lost.",
+      "body": "AutoVersion runs quietly in your menu bar and takes a snapshot every time you save a file in the folders you protect. You can browse old versions, see exactly what changed, and roll any file back with one click.",
+      "next": "Get started"
+    },
+    "pickFolder": {
+      "title": "Pick a folder to protect",
+      "body": "AutoVersion will watch this folder for changes. Common picks are your Documents folder, a project directory, or wherever you keep work-in-progress files.",
+      "button": "Choose folder…",
+      "picked": "Selected:"
+    },
+    "extensions": {
+      "title": "Which kinds of files should AutoVersion track?",
+      "body": "Pick a preset or define your own list. AutoVersion ignores everything else in the folder.",
+      "preset": {
+        "word": "Word documents (.docx)",
+        "wordHint": "Best for writers using Microsoft Word.",
+        "markdown": "Markdown & text",
+        "markdownHint": ".md, .markdown, .txt",
+        "code": "Code",
+        "codeHint": "Common languages: .py, .ts, .rs, .js, .go, .java, …",
+        "custom": "Custom",
+        "customHint": "Comma-separated list, no dots.",
+        "customPlaceholder": "e.g. docx, md, tex"
+      }
+    },
+    "confirm": {
+      "title": "All set",
+      "summary": "AutoVersion will protect <strong>{{folder}}</strong> and watch <strong>{{exts}}</strong>.",
+      "startAtLogin": "Start AutoVersion automatically when I log in",
+      "finish": "Start protecting"
+    }
+  },
+  "folders": {
+    "emptyFolder": "Pick a folder to see its files.",
+    "noFiles": "No saves yet — edit a file in this folder to create the first snapshot.",
+    "noSnapshots": "No snapshots yet for this file.",
+    "pickFile": "Pick a file to see its history.",
+    "noDifferences": "No differences between these two versions.",
+    "loadingHistory": "Loading history…",
+    "snapshots": "Snapshots",
+    "compare": {
+      "label": "Compare against",
+      "previous": "Previous version",
+      "current": "Current file on disk",
+      "pick": "Pick another version…",
+      "selectCommit": "Select a version"
+    },
+    "filesColumn": "Files",
+    "diff": {
+      "leftPrevious": "Previous revision",
+      "rightSelected": "This revision",
+      "leftSnapshot": "Snapshot",
+      "rightDisk": "Current file on disk",
+      "leftPicked": "Compared revision",
+      "rightPicked": "This revision"
+    },
+    "restore": "Restore this version",
+    "restoring": "Restoring…",
+    "openFile": "Open file",
+    "revealFile": "Show in Finder",
+    "restoreConfirm": "Replace {{file}} with this version? Current file will be snapshotted first.",
+    "docxWarning": "If the file is open in Word, close it before restoring.",
+    "restoreToast": "Restored from {{sha}}",
+    "stats": {
+      "added": "+{{n}}",
+      "removed": "-{{n}}",
+      "modified": "modified",
+      "deleted": "deleted",
+      "added_one": "+1 line",
+      "added_other": "+{{count}} lines",
+      "removed_one": "-1 line",
+      "removed_other": "-{{count}} lines"
+    },
+    "diffHeader": "{{file}} · {{sha}} · {{when}}",
+    "metaOnly": "Metadata-only (opaque binary)",
+    "leftBytes": "Left: {{n}} bytes",
+    "rightBytes": "Right: {{n}} bytes"
+  },
+  "activity": {
+    "title": "Recent changes",
+    "subtitle": "Every snapshot AutoVersion has taken, newest first.",
+    "empty": "No changes yet. Edit a file in any of your watched folders to see it here.",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "viewInFolders": "Open in Folders",
+    "loading": "Loading recent activity…"
+  },
+  "settings": {
+    "title": "Settings",
+    "watchedFolders": "Watched folders",
+    "enabled": "Enabled",
+    "add": "Add folder",
+    "addHint": "Extensions for new folder (comma-separated)",
+    "remove": "Remove",
+    "preview": "Preview matches",
+    "previewResult": "{{matched}} matched, {{ignored}} ignored",
+    "reveal": "Reveal in Finder",
+    "watching": "Watching",
+    "watcherStatus": "Watcher: {{status}}",
+    "statusRunning": "Running",
+    "statusPaused": "Paused",
+    "pause": "Pause",
+    "resume": "Resume",
+    "storage": "Storage",
+    "totalStorage": "Total snapshot storage: {{n}}",
+    "retention": "Run retention now (v1 no-op)",
+    "language": "Language",
+    "languageEnglish": "English",
+    "languagePortuguese": "Português (Brasil)"
+  },
+  "help": {
+    "title": "Help",
+    "topics": {
+      "howItWorks": "How AutoVersion works",
+      "restoring": "Restoring a version",
+      "pauseResume": "Pause and resume",
+      "dataLocation": "Where AutoVersion stores your data",
+      "troubleshooting": "Troubleshooting"
+    },
+    "howItWorks": {
+      "title": "How AutoVersion works",
+      "intro": "AutoVersion sits in your menu bar and watches the folders you tell it to protect. Every time a file is saved, it takes a snapshot — a complete copy of that file at that moment.",
+      "snapshotTitle": "What is a snapshot?",
+      "snapshot": "A snapshot is a full copy of one file at one point in time, stored inside AutoVersion (not in your folder). It is independent of every other snapshot, so deleting one won't break the others.",
+      "debounceTitle": "Why doesn't every save create a snapshot?",
+      "debounce": "When you hit save in apps like Microsoft Word, the app actually performs several rapid file operations under the hood. AutoVersion waits about 2 seconds for those to settle before snapshotting, so one save by you produces one snapshot.",
+      "dedupTitle": "What if I save without changing anything?",
+      "dedup": "AutoVersion fingerprints each file using SHA-256. If the new content is identical to the previous snapshot, no new snapshot is created."
+    },
+    "restoring": {
+      "title": "Restoring a version",
+      "intro": "Bring any file back to a previous state with two clicks.",
+      "step1": "Open the Folders tab, pick a folder, then a file.",
+      "step2": "Click any snapshot in the history list to preview the diff.",
+      "step3": "Click \"Restore this version\" and confirm.",
+      "safetyTitle": "What happens during restore?",
+      "safety": "Before AutoVersion overwrites your file, it takes a snapshot of the current state. So restoring is never destructive — you can always restore back to where you were.",
+      "wordTitle": "A note about Word documents",
+      "word": "If a .docx file is open in Microsoft Word, close it first. Word holds an exclusive lock on open documents and will refuse the file replacement."
+    },
+    "pauseResume": {
+      "title": "Pause and resume",
+      "intro": "Sometimes you don't want AutoVersion taking snapshots — for example while running a script that touches many files at once.",
+      "where": "You can pause from two places:",
+      "tray": "The menu bar icon → Pause Watching.",
+      "settings": "The Settings tab → Watching → Pause.",
+      "behaviorTitle": "What does pausing actually do?",
+      "behavior": "While paused, AutoVersion ignores file save events. Existing snapshots stay intact and remain restorable. Resume to start protecting again."
+    },
+    "dataLocation": {
+      "title": "Where AutoVersion stores your data",
+      "intro": "Everything AutoVersion creates lives under your home directory. Nothing is uploaded anywhere.",
+      "configTitle": "Settings",
+      "config": "Stored at ~/Library/Application Support/AutoVersion/config.json — a single small JSON file with your watched folders and preferences.",
+      "snapshotsTitle": "Snapshots",
+      "snapshots": "Each watched folder gets its own snapshot store under ~/Library/Application Support/AutoVersion/repos/<folder-id>/.",
+      "logsTitle": "Logs",
+      "logs": "Diagnostic logs go to ~/Library/Logs/AutoVersion/autoversion.log. Useful if you ever need to file a bug report.",
+      "nukeTitle": "Removing all AutoVersion data",
+      "nuke": "If you ever want to start fresh, quit AutoVersion and run: rm -rf ~/Library/Application\\ Support/AutoVersion. Your original files in the watched folders are untouched."
+    },
+    "troubleshooting": {
+      "title": "Troubleshooting",
+      "noSnapshotsTitle": "No snapshots are appearing",
+      "noSnapshots": "Check, in this order: that the folder's Enabled toggle is on; that the file's extension is in the watched list; that AutoVersion is not paused (look at the menu bar icon); and the log file at ~/Library/Logs/AutoVersion/autoversion.log for clues.",
+      "manyVersionsTitle": "I got 10 versions for one Word save",
+      "manyVersions": "That shouldn't happen — AutoVersion's debouncer collapses Word's save sequence into one snapshot. If you see this, please report it as a bug and include a few lines from the log file.",
+      "gatekeeperTitle": "First launch is blocked by Gatekeeper",
+      "gatekeeper": "AutoVersion is unsigned. Right-click the app and choose Open the first time, or run xattr -cr /Applications/AutoVersion.app from Terminal."
+    }
+  },
+  "about": {
+    "title": "About",
+    "description": "AutoVersion keeps automatic snapshots of files in folders you choose. Snapshots live under ~/Library/Application Support/AutoVersion/repos/.",
+    "gatekeeper": "Unsigned macOS build: first open with right-click → Open, or xattr -cr /Applications/AutoVersion.app."
+  }
+}

@@ -7,9 +7,19 @@ import {
 } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { sendNotification } from "@tauri-apps/plugin-notification";
-import * as Diff from "diff";
-import { formatDistanceToNow, parseISO } from "date-fns";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useTranslation } from "react-i18next";
+import {
+  format as formatDate,
+  formatDistanceToNow,
+  isToday,
+  isYesterday,
+  parseISO,
+} from "date-fns";
+import { enUS, ptBR } from "date-fns/locale";
+import type { Locale } from "date-fns";
 import mammoth from "mammoth";
+import { TwoPaneLineDiff } from "@/components/TwoPaneLineDiff";
 import { Button } from "@/components/ui/button";
 import {
   onConfigChanged,
@@ -26,8 +36,10 @@ import {
   getSnapshotContent,
   getStatus,
   getStorageUsage,
+  listRecentChanges,
   listSnapshots,
   listWatchedFiles,
+  openWatchedFile,
   pauseWatching,
   previewFolderMatches,
   removeWatchedFolder,
@@ -37,13 +49,55 @@ import {
   runRetentionNow,
   setConfig,
   updateWatchedFolder,
+  type ActivityEntry,
   type Config,
   type FileEntry,
   type Snapshot,
 } from "@/lib/tauri";
 
-type Nav = "folders" | "settings" | "about";
+type Nav = "folders" | "activity" | "settings" | "help" | "about";
 type CompareMode = "previous" | "current" | "pick";
+
+const PRESETS = {
+  word: ["docx"],
+  markdown: ["md", "markdown", "txt"],
+  code: [
+    "py",
+    "js",
+    "mjs",
+    "cjs",
+    "ts",
+    "tsx",
+    "jsx",
+    "rs",
+    "go",
+    "java",
+    "c",
+    "cc",
+    "cpp",
+    "cxx",
+    "h",
+    "hh",
+    "hpp",
+    "rb",
+    "cs",
+    "kt",
+    "swift",
+    "php",
+    "scala",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "sql",
+    "r",
+    "lua",
+    "vim",
+    "el",
+  ],
+} as const;
+
+type PresetKey = "word" | "markdown" | "code" | "custom";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -51,7 +105,59 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function dateLocale(lang: string | undefined): Locale {
+  if (lang && lang.toLowerCase().startsWith("pt")) return ptBR;
+  return enUS;
+}
+
+/** Map i18next's `language` (e.g. `pt`) to our supported radio value `pt-BR`. */
+function normalizeUiLang(lng: string | undefined): "en" | "pt-BR" {
+  if (!lng) return "en";
+  const l = lng.toLowerCase();
+  if (l === "pt-br" || l.startsWith("pt")) return "pt-BR";
+  return "en";
+}
+
+async function pickDirectory(): Promise<string | null> {
+  console.log("[pickDirectory] start");
+  try {
+    const w = getCurrentWindow();
+    await w.show();
+    await w.setFocus();
+  } catch (e) {
+    console.warn("[pickDirectory] focus before dialog failed:", e);
+  }
+  const result = await open({ directory: true, multiple: false });
+  if (typeof result === "string" && result) return result;
+  return null;
+}
+
+function Spinner({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-block size-3 animate-spin rounded-full border-2 border-zinc-500 border-t-zinc-200 ${className}`}
+      aria-hidden
+    />
+  );
+}
+
 function App() {
+  const { t, i18n } = useTranslation();
+
+  // react-i18next's internal subscription has been flaky for us in dev (Tauri webview
+  // + StrictMode). Force a full re-render of the tree whenever the language changes,
+  // so every `t(...)` call recomputes regardless of useTranslation's behavior.
+  const [, setLangTick] = useState(0);
+  useEffect(() => {
+    const onChanged = () => setLangTick((n) => n + 1);
+    i18n.on("languageChanged", onChanged);
+    return () => {
+      i18n.off("languageChanged", onChanged);
+    };
+  }, [i18n]);
+
+  const locale = dateLocale(i18n.resolvedLanguage);
+
   const [cfg, setCfg] = useState<Config | null>(null);
   const [nav, setNav] = useState<Nav>("folders");
   const [toast, setToast] = useState<string | null>(null);
@@ -66,9 +172,9 @@ function App() {
   const [comparePickSha, setComparePickSha] = useState<string | null>(null);
   const [leftBytes, setLeftBytes] = useState<number[]>([]);
   const [rightBytes, setRightBytes] = useState<number[]>([]);
-
-  const [settingsPreview, setSettingsPreview] = useState<string>("");
-  const [extInput, setExtInput] = useState("");
+  const [loadingSnaps, setLoadingSnaps] = useState(false);
+  const [loadingDiff, setLoadingDiff] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -94,11 +200,11 @@ function App() {
       void sendNotification({ title: "AutoVersion", body: p.message });
     }).then((u) => unsubs.push(u));
     void onRestoreCompleted((p) => {
-      setToast(`Restored from ${p.restoredFromSha.slice(0, 7)}`);
+      setToast(t("folders.restoreToast", { sha: p.restoredFromSha.slice(0, 7) }));
       setTimeout(() => setToast(null), 4000);
     }).then((u) => unsubs.push(u));
     return () => unsubs.forEach((u) => u());
-  }, [refresh, selectedFile, selectedFolderId]);
+  }, [refresh, selectedFile, selectedFolderId, t]);
 
   useEffect(() => {
     if (!selectedFolderId) {
@@ -115,9 +221,11 @@ function App() {
       setSnaps([]);
       return;
     }
-    void listSnapshots(selectedFolderId, selectedFile)
+    setLoadingSnaps(true);
+    listSnapshots(selectedFolderId, selectedFile)
       .then(setSnaps)
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(String(e)))
+      .finally(() => setLoadingSnaps(false));
   }, [selectedFolderId, selectedFile, cfg?.watchedFolders]);
 
   useEffect(() => {
@@ -130,6 +238,7 @@ function App() {
     const prev = idx >= 0 && idx + 1 < snaps.length ? snaps[idx + 1] : null;
 
     const load = async () => {
+      setLoadingDiff(true);
       try {
         if (compare === "current") {
           const cur = await getCurrentContent(selectedFolderId, selectedFile);
@@ -177,6 +286,8 @@ function App() {
         }
       } catch (e) {
         setErr(String(e));
+      } finally {
+        setLoadingDiff(false);
       }
     };
     void load();
@@ -194,10 +305,79 @@ function App() {
     return findFormatEntry(ext).diffKind;
   }, [selectedFile]);
 
+  const onRestore = useCallback(async () => {
+    if (!selectedFolderId || !selectedFile || !selectedSnap) return;
+    const ext = selectedFile.split(".").pop()?.toLowerCase() ?? "";
+    const docxExtra = ext === "docx" ? "\n\n" + t("folders.docxWarning") : "";
+    if (
+      !confirm(
+        t("folders.restoreConfirm", { file: selectedFile }) + docxExtra,
+      )
+    ) {
+      return;
+    }
+    setRestoring(true);
+    try {
+      await restoreSnapshot(
+        selectedFolderId,
+        selectedSnap.commitSha,
+        selectedFile,
+      );
+      const fresh = await listSnapshots(selectedFolderId, selectedFile);
+      setSnaps(fresh);
+      const stillThere = fresh.find((s) => s.commitSha === selectedSnap.commitSha);
+      setSelectedSnap(stillThere ?? fresh[0] ?? null);
+      if (compare === "current") {
+        try {
+          const cur = await getCurrentContent(selectedFolderId, selectedFile);
+          setRightBytes(cur);
+        } catch {
+          /* file may have been deleted; ignore */
+        }
+      }
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setRestoring(false);
+    }
+  }, [compare, selectedFile, selectedFolderId, selectedSnap, t]);
+
+  const diffPaneLabels = useMemo(() => {
+    if (compare === "current") {
+      return {
+        left: t("folders.diff.leftSnapshot"),
+        right: t("folders.diff.rightDisk"),
+      };
+    }
+    if (compare === "pick") {
+      return {
+        left: t("folders.diff.leftPicked"),
+        right: t("folders.diff.rightPicked"),
+      };
+    }
+    return {
+      left: t("folders.diff.leftPrevious"),
+      right: t("folders.diff.rightSelected"),
+    };
+  }, [compare, t]);
+
   const renderDiff = () => {
-    if (!selectedSnap || !selectedFile) {
+    if (!selectedFile) {
       return (
-        <p className="text-sm text-zinc-500">Select a file and a snapshot.</p>
+        <p className="text-sm text-zinc-500">{t("folders.pickFile")}</p>
+      );
+    }
+    if (loadingDiff && !selectedSnap) {
+      return (
+        <p className="text-sm text-zinc-500">
+          <Spinner className="mr-2" />
+          {t("folders.loadingHistory")}
+        </p>
+      );
+    }
+    if (!selectedSnap) {
+      return (
+        <p className="text-sm text-zinc-500">{t("folders.noSnapshots")}</p>
       );
     }
     const left = bytesToUtf8(leftBytes);
@@ -205,54 +385,56 @@ function App() {
     if (diffKind === "opaqueBinary") {
       return (
         <div className="space-y-2 text-sm text-zinc-300">
-          <p>Metadata-only (opaque binary)</p>
-          <p>Left length: {leftBytes.length} bytes</p>
-          <p>Right length: {rightBytes.length} bytes</p>
+          <p>{t("folders.metaOnly")}</p>
+          <p>{t("folders.leftBytes", { n: leftBytes.length })}</p>
+          <p>{t("folders.rightBytes", { n: rightBytes.length })}</p>
         </div>
       );
     }
     if (diffKind === "docx") {
-      return <DocxDiff left={leftBytes} right={rightBytes} />;
-    }
-    if (left === right && snaps.length <= 1) {
       return (
-        <pre className="max-h-[480px] overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-200">
-          {right}
-        </pre>
+        <DocxDiff
+          left={leftBytes}
+          right={rightBytes}
+          leftLabel={diffPaneLabels.left}
+          rightLabel={diffPaneLabels.right}
+        />
       );
     }
-    const parts = Diff.diffLines(left, right);
+    if (left === right) {
+      if (snaps.length <= 1) {
+        return (
+          <pre className="max-h-[480px] overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-200">
+            {right || " "}
+          </pre>
+        );
+      }
+      return (
+        <p className="text-sm text-zinc-500">{t("folders.noDifferences")}</p>
+      );
+    }
     return (
-      <pre className="max-h-[480px] overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 text-xs">
-        {parts.map((p, i) => (
-          <span
-            key={i}
-            className={
-              p.added
-                ? "bg-emerald-900/40 text-emerald-100"
-                : p.removed
-                  ? "bg-red-900/40 text-red-100"
-                  : "text-zinc-300"
-            }
-          >
-            {p.value}
-          </span>
-        ))}
-      </pre>
+      <TwoPaneLineDiff
+        leftLabel={diffPaneLabels.left}
+        rightLabel={diffPaneLabels.right}
+        left={left}
+        right={right}
+      />
     );
   };
 
   if (!cfg) {
     return (
       <div className="flex min-h-screen items-center justify-center text-zinc-400">
-        Loading…
+        <Spinner className="mr-2" />
+        {t("common.loading")}
       </div>
     );
   }
 
   if (cfg.watchedFolders.length === 0) {
     return (
-      <Onboarding
+      <Wizard
         cfg={cfg}
         onDone={() => {
           void refresh();
@@ -261,33 +443,47 @@ function App() {
     );
   }
 
+  const navItems: Nav[] = ["folders", "activity", "settings", "help", "about"];
+
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+    <div
+      key={i18n.resolvedLanguage ?? i18n.language ?? "en"}
+      className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100"
+    >
       {toast && (
         <div className="border-b border-emerald-900/40 bg-emerald-950/50 px-4 py-2 text-sm text-emerald-100">
           {toast}
         </div>
       )}
       {err && (
-        <div className="border-b border-red-900/40 bg-red-950/40 px-4 py-2 text-sm text-red-100">
-          {err}
+        <div className="flex items-start gap-2 border-b border-red-900/40 bg-red-950/40 px-4 py-2 text-sm text-red-100">
+          <span className="flex-1">{err}</span>
+          <button
+            type="button"
+            onClick={() => setErr(null)}
+            className="text-xs text-red-200 underline-offset-2 hover:underline"
+          >
+            {t("common.close")}
+          </button>
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        <aside className="flex w-48 flex-col border-r border-zinc-800 bg-zinc-900/50">
+        <aside className="flex w-48 shrink-0 flex-col border-r border-zinc-800 bg-zinc-900/50">
           <div className="border-b border-zinc-800 p-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
             AutoVersion
           </div>
-          {(["folders", "settings", "about"] as const).map((k) => (
+          {navItems.map((k) => (
             <button
               key={k}
               type="button"
               onClick={() => setNav(k)}
-              className={`px-3 py-2 text-left text-sm capitalize ${
-                nav === k ? "bg-zinc-800 text-white" : "text-zinc-400 hover:bg-zinc-800/60"
+              className={`px-3 py-2 text-left text-sm transition-colors ${
+                nav === k
+                  ? "border-l-2 border-emerald-500 bg-zinc-800 pl-[10px] text-white"
+                  : "text-zinc-400 hover:bg-zinc-800/60"
               }`}
             >
-              {k}
+              {t(`nav.${k}`)}
             </button>
           ))}
         </aside>
@@ -295,12 +491,14 @@ function App() {
           {nav === "folders" && (
             <FoldersPane
               cfg={cfg}
+              locale={locale}
               selectedFolderId={selectedFolderId}
               setSelectedFolderId={setSelectedFolderId}
               files={files}
               selectedFile={selectedFile}
               setSelectedFile={setSelectedFile}
               snaps={snaps}
+              loadingSnaps={loadingSnaps}
               selectedSnap={selectedSnap}
               setSelectedSnap={setSelectedSnap}
               compare={compare}
@@ -308,60 +506,41 @@ function App() {
               comparePickSha={comparePickSha}
               setComparePickSha={setComparePickSha}
               renderDiff={renderDiff}
-              onRestore={async () => {
-                if (!selectedFolderId || !selectedFile || !selectedSnap) return;
-                const ext = selectedFile.split(".").pop()?.toLowerCase() ?? "";
-                const warn =
-                  ext === "docx"
-                    ? "\n\nIf the file is open in Word, close it before restoring."
-                    : "";
-                if (
-                  !confirm(
-                    `Replace ${selectedFile} with this version? Current file will be snapshotted first.${warn}`,
-                  )
-                ) {
-                  return;
-                }
-                try {
-                  await restoreSnapshot(
-                    selectedFolderId,
-                    selectedSnap.commitSha,
-                    selectedFile,
-                  );
-                } catch (e) {
-                  setErr(String(e));
-                }
+              restoring={restoring}
+              onRestore={onRestore}
+            />
+          )}
+          {nav === "activity" && (
+            <ActivityPane
+              locale={locale}
+              onOpen={(entry) => {
+                setSelectedFolderId(entry.folderId);
+                setSelectedFile(entry.relativePath);
+                setSelectedSnap({
+                  commitSha: entry.commitSha,
+                  timestamp: entry.timestamp,
+                  addedLines: entry.addedLines,
+                  removedLines: entry.removedLines,
+                  isBinary: entry.isBinary,
+                  byteDelta: entry.byteDelta,
+                  isTombstone: entry.isTombstone,
+                });
+                setCompare("previous");
+                setNav("folders");
               }}
             />
           )}
           {nav === "settings" && (
-            <SettingsPane
-              cfg={cfg}
-              extInput={extInput}
-              setExtInput={setExtInput}
-              settingsPreview={settingsPreview}
-              setSettingsPreview={setSettingsPreview}
-              onReload={refresh}
-            />
+            <SettingsPane cfg={cfg} onReload={refresh} />
           )}
+          {nav === "help" && <HelpPane />}
           {nav === "about" && (
             <div className="max-w-lg space-y-2 text-sm text-zinc-300">
-              <h2 className="text-lg font-semibold text-white">About</h2>
-              <p>
-                AutoVersion keeps automatic snapshots of files in folders you
-                choose. Snapshots live under{" "}
-                <code className="rounded bg-zinc-800 px-1">
-                  ~/Library/Application Support/AutoVersion/repos/
-                </code>
-                .
-              </p>
-              <p className="text-zinc-500">
-                Unsigned macOS build: first open with right-click → Open, or{" "}
-                <code className="rounded bg-zinc-800 px-1">
-                  xattr -cr /Applications/AutoVersion.app
-                </code>
-                .
-              </p>
+              <h2 className="text-lg font-semibold text-white">
+                {t("about.title")}
+              </h2>
+              <p>{t("about.description")}</p>
+              <p className="text-zinc-500">{t("about.gatekeeper")}</p>
             </div>
           )}
         </main>
@@ -370,7 +549,18 @@ function App() {
   );
 }
 
-function DocxDiff({ left, right }: { left: number[]; right: number[] }) {
+function DocxDiff({
+  left,
+  right,
+  leftLabel,
+  rightLabel,
+}: {
+  left: number[];
+  right: number[];
+  leftLabel: string;
+  rightLabel: string;
+}) {
+  const { t } = useTranslation();
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   useEffect(() => {
@@ -391,95 +581,364 @@ function DocxDiff({ left, right }: { left: number[]; right: number[] }) {
       cancelled = true;
     };
   }, [left, right]);
-  const parts = Diff.diffWordsWithSpace(a, b);
+  if (a === b) {
+    return (
+      <p className="text-sm text-zinc-500">{t("folders.noDifferences")}</p>
+    );
+  }
   return (
-    <div className="max-h-[480px] overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-3 text-sm leading-relaxed">
-      {parts.map((p, i) => (
-        <span
-          key={i}
-          className={
-            p.added
-              ? "bg-emerald-900/40 text-emerald-100"
-              : p.removed
-                ? "bg-red-900/40 text-red-100"
-                : "text-zinc-200"
-          }
-        >
-          {p.value}
-        </span>
-      ))}
-    </div>
+    <TwoPaneLineDiff
+      leftLabel={leftLabel}
+      rightLabel={rightLabel}
+      left={a}
+      right={b}
+    />
   );
 }
 
-function Onboarding({
+// ----------------------------- Wizard -----------------------------
+
+function Wizard({
   cfg,
   onDone,
 }: {
   cfg: Config;
   onDone: () => void;
 }) {
-  const [ext, setExt] = useState("docx, md");
-  const [login, setLogin] = useState(cfg.startAtLogin);
+  const { t, i18n } = useTranslation();
+  // Same forced re-render trick as the main shell, in case the wizard is on screen
+  // while the user changes language (rare, but cheap to support).
+  const [, setLangTick] = useState(0);
+  useEffect(() => {
+    const onChanged = () => setLangTick((n) => n + 1);
+    i18n.on("languageChanged", onChanged);
+    return () => {
+      i18n.off("languageChanged", onChanged);
+    };
+  }, [i18n]);
+  const [step, setStep] = useState(0);
+  const [dir, setDir] = useState<string | null>(null);
+  const [preset, setPreset] = useState<PresetKey>("word");
+  const [customExt, setCustomExt] = useState("");
+  const [startAtLogin, setStartAtLogin] = useState(cfg.startAtLogin);
+  const [busy, setBusy] = useState(false);
+
+  const total = 4;
+
+  const currentExtensions = useMemo<string[]>(() => {
+    if (preset === "custom") {
+      return customExt
+        .split(",")
+        .map((s) => s.trim().replace(/^\./, "").toLowerCase())
+        .filter(Boolean);
+    }
+    return [...PRESETS[preset]];
+  }, [preset, customExt]);
+
+  const canNext = useMemo(() => {
+    if (step === 1) return !!dir;
+    if (step === 2) {
+      if (preset === "custom") return currentExtensions.length > 0;
+      return true;
+    }
+    return true;
+  }, [step, dir, preset, currentExtensions]);
+
+  const finish = async () => {
+    if (!dir) return;
+    setBusy(true);
+    try {
+      await addWatchedFolder(dir, currentExtensions);
+      if (startAtLogin !== cfg.startAtLogin) {
+        const fresh = await getConfig();
+        await setConfig({ ...fresh, startAtLogin });
+      }
+      try {
+        await sendNotification({
+          title: "AutoVersion",
+          body: `Now protecting ${dir.split("/").pop() ?? dir}`,
+        });
+      } catch {
+        /* notification permission may be denied; non-fatal */
+      }
+      onDone();
+    } catch (e) {
+      alert(`Couldn't finish setup: ${String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="mx-auto flex max-w-lg flex-col gap-6 p-10">
-      <h1 className="text-2xl font-semibold text-white">
-        AutoVersion keeps a history of every save, so nothing ever gets lost.
-      </h1>
-      <Button
-        type="button"
-        onClick={async () => {
-          const dir = await open({ directory: true, multiple: false });
-          if (typeof dir !== "string" || !dir) return;
-          const parts = ext
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
-          try {
-            await addWatchedFolder(dir, parts);
-            const next = { ...cfg, startAtLogin: login };
-            await setConfig(next);
-            await sendNotification({
-              title: "AutoVersion",
-              body: `Now protecting ${dir.split("/").pop() ?? dir}`,
-            });
-            onDone();
-          } catch (e) {
-            alert(String(e));
-          }
-        }}
-      >
-        Pick a folder to protect
-      </Button>
-      <label className="text-sm text-zinc-400">
-        Extensions (comma-separated, no dots)
-        <input
-          className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100"
-          value={ext}
-          onChange={(e) => setExt(e.target.value)}
-        />
-      </label>
-      <label className="flex items-center gap-2 text-sm text-zinc-300">
-        <input
-          type="checkbox"
-          checked={login}
-          onChange={(e) => setLogin(e.target.checked)}
-        />
-        Start AutoVersion automatically when I log in
-      </label>
+    <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100">
+      <header className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            AutoVersion
+          </span>
+          <div className="flex gap-1.5">
+            {Array.from({ length: total }).map((_, i) => (
+              <span
+                key={i}
+                className={`h-1.5 w-6 rounded-full transition-colors ${
+                  i <= step ? "bg-emerald-500" : "bg-zinc-700"
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-xs text-zinc-500">
+            {t("wizard.step", { n: step + 1, total })}
+          </span>
+        </div>
+        {step < total - 1 && (
+          <button
+            type="button"
+            onClick={() => setStep(total - 1)}
+            className="text-xs text-zinc-500 underline-offset-2 hover:text-zinc-200 hover:underline"
+          >
+            {t("common.skip")}
+          </button>
+        )}
+      </header>
+      <div className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 p-10">
+        {step === 0 && (
+          <section className="space-y-4">
+            <h1 className="text-2xl font-semibold leading-tight text-white">
+              {t("wizard.welcome.title")}
+            </h1>
+            <p className="text-sm leading-relaxed text-zinc-300">
+              {t("wizard.welcome.body")}
+            </p>
+          </section>
+        )}
+        {step === 1 && (
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold text-white">
+              {t("wizard.pickFolder.title")}
+            </h2>
+            <p className="text-sm leading-relaxed text-zinc-300">
+              {t("wizard.pickFolder.body")}
+            </p>
+            <div className="space-y-2">
+              <Button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const picked = await pickDirectory();
+                    if (picked) setDir(picked);
+                  } catch (e) {
+                    alert(`Couldn't open folder picker: ${String(e)}`);
+                  }
+                }}
+              >
+                {dir ? t("common.change") : t("wizard.pickFolder.button")}
+              </Button>
+              {dir && (
+                <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm">
+                  <span className="text-zinc-500">
+                    {t("wizard.pickFolder.picked")}
+                  </span>
+                  <span className="font-mono text-xs text-zinc-200">{dir}</span>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+        {step === 2 && (
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold text-white">
+              {t("wizard.extensions.title")}
+            </h2>
+            <p className="text-sm leading-relaxed text-zinc-300">
+              {t("wizard.extensions.body")}
+            </p>
+            <div className="space-y-2">
+              {(["word", "markdown", "code", "custom"] as const).map((k) => (
+                <label
+                  key={k}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                    preset === k
+                      ? "border-emerald-500 bg-emerald-950/20"
+                      : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="preset"
+                    className="mt-1"
+                    checked={preset === k}
+                    onChange={() => setPreset(k)}
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-zinc-100">
+                      {t(`wizard.extensions.preset.${k}`)}
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      {t(`wizard.extensions.preset.${k}Hint`)}
+                    </div>
+                    {k === "custom" && preset === "custom" && (
+                      <input
+                        autoFocus
+                        className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
+                        placeholder={t("wizard.extensions.preset.customPlaceholder")}
+                        value={customExt}
+                        onChange={(e) => setCustomExt(e.target.value)}
+                      />
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+          </section>
+        )}
+        {step === 3 && (
+          <section className="space-y-4">
+            <h2 className="text-xl font-semibold text-white">
+              {t("wizard.confirm.title")}
+            </h2>
+            <p
+              className="text-sm leading-relaxed text-zinc-300"
+              dangerouslySetInnerHTML={{
+                __html: t("wizard.confirm.summary", {
+                  folder: dir
+                    ? escapeHtml(dir.split("/").pop() ?? dir)
+                    : "—",
+                  exts: escapeHtml(currentExtensions.join(", ") || "—"),
+                }),
+              }}
+            />
+            <label className="flex items-center gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={startAtLogin}
+                onChange={(e) => setStartAtLogin(e.target.checked)}
+              />
+              {t("wizard.confirm.startAtLogin")}
+            </label>
+          </section>
+        )}
+      </div>
+      <footer className="flex items-center justify-between border-t border-zinc-800 px-6 py-4">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={step === 0 || busy}
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+        >
+          {t("common.back")}
+        </Button>
+        {step < total - 1 ? (
+          <Button
+            type="button"
+            disabled={!canNext}
+            onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
+          >
+            {step === 0 ? t("wizard.welcome.next") : t("common.next")}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            disabled={!dir || busy || currentExtensions.length === 0}
+            onClick={() => void finish()}
+          >
+            {busy && <Spinner className="mr-2" />}
+            {t("wizard.confirm.finish")}
+          </Button>
+        )}
+      </footer>
     </div>
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ----------------------------- Folders pane -----------------------------
+
+function StatBadge({
+  snap,
+  className = "",
+}: {
+  snap: Pick<Snapshot, "addedLines" | "removedLines" | "isBinary" | "isTombstone">;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  if (snap.isTombstone) {
+    return (
+      <span
+        className={`rounded bg-red-950/40 px-1.5 py-0.5 text-[10px] uppercase text-red-200 ${className}`}
+      >
+        {t("folders.stats.deleted")}
+      </span>
+    );
+  }
+  if (snap.isBinary) {
+    return (
+      <span
+        className={`rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase text-zinc-300 ${className}`}
+      >
+        {t("folders.stats.modified")}
+      </span>
+    );
+  }
+  if (snap.addedLines === 0 && snap.removedLines === 0) {
+    return null;
+  }
+  return (
+    <span className={`flex gap-1 text-[10px] font-mono ${className}`}>
+      {snap.addedLines > 0 && (
+        <span className="rounded bg-emerald-950/40 px-1.5 py-0.5 text-emerald-200">
+          +{snap.addedLines}
+        </span>
+      )}
+      {snap.removedLines > 0 && (
+        <span className="rounded bg-red-950/40 px-1.5 py-0.5 text-red-200">
+          -{snap.removedLines}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function CopyShaButton({ sha }: { sha: string }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(sha);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard may be denied; fail silently */
+        }
+      }}
+      className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300 hover:border-zinc-500"
+      title={sha}
+    >
+      {copied ? t("common.copied") : sha.slice(0, 7)}
+    </button>
   );
 }
 
 function FoldersPane({
   cfg,
+  locale,
   selectedFolderId,
   setSelectedFolderId,
   files,
   selectedFile,
   setSelectedFile,
   snaps,
+  loadingSnaps,
   selectedSnap,
   setSelectedSnap,
   compare,
@@ -487,15 +946,18 @@ function FoldersPane({
   comparePickSha,
   setComparePickSha,
   renderDiff,
+  restoring,
   onRestore,
 }: {
   cfg: Config;
+  locale: Locale;
   selectedFolderId: string | null;
   setSelectedFolderId: (id: string | null) => void;
   files: FileEntry[];
   selectedFile: string | null;
   setSelectedFile: (p: string | null) => void;
   snaps: Snapshot[];
+  loadingSnaps: boolean;
   selectedSnap: Snapshot | null;
   setSelectedSnap: (s: Snapshot | null) => void;
   compare: CompareMode;
@@ -503,39 +965,54 @@ function FoldersPane({
   comparePickSha: string | null;
   setComparePickSha: (s: string | null) => void;
   renderDiff: () => ReactNode;
+  restoring: boolean;
   onRestore: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
+  const fileBaseName = selectedFile
+    ? selectedFile.split("/").pop() ?? selectedFile
+    : null;
+
   return (
     <div className="grid h-full min-h-[560px] grid-cols-12 gap-3">
-      <section className="col-span-3 space-y-2 overflow-auto rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+      <section className="col-span-3 flex flex-col gap-1 overflow-auto rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
         <h3 className="px-1 text-xs font-semibold uppercase text-zinc-500">
-          Folders
+          {t("nav.folders")}
         </h3>
-        {cfg.watchedFolders.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => {
-              setSelectedFolderId(f.id);
-              setSelectedFile(null);
-              setSelectedSnap(null);
-            }}
-            className={`block w-full truncate rounded px-2 py-1.5 text-left text-sm ${
-              selectedFolderId === f.id
-                ? "bg-zinc-800 text-white"
-                : "text-zinc-400 hover:bg-zinc-800/50"
-            }`}
-          >
-            {f.path}
-          </button>
-        ))}
+        {cfg.watchedFolders.map((f) => {
+          const name = f.path.split("/").pop() ?? f.path;
+          const active = selectedFolderId === f.id;
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => {
+                setSelectedFolderId(f.id);
+                setSelectedFile(null);
+                setSelectedSnap(null);
+              }}
+              className={`block w-full truncate rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                active
+                  ? "border-l-2 border-emerald-500 bg-zinc-800 pl-[6px] text-white"
+                  : "text-zinc-400 hover:bg-zinc-800/50"
+              }`}
+              title={f.path}
+            >
+              <div className="truncate font-medium">{name}</div>
+              <div className="truncate text-[10px] text-zinc-500">{f.path}</div>
+            </button>
+          );
+        })}
       </section>
-      <section className="col-span-3 space-y-2 overflow-auto rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+      <section className="col-span-3 space-y-1 overflow-auto rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
         <h3 className="px-1 text-xs font-semibold uppercase text-zinc-500">
-          Files
+          {t("folders.filesColumn")}
         </h3>
-        {files.length === 0 && (
-          <p className="px-1 text-xs text-zinc-500">No saves yet.</p>
+        {!selectedFolderId && (
+          <p className="px-1 text-xs text-zinc-500">{t("folders.emptyFolder")}</p>
+        )}
+        {selectedFolderId && files.length === 0 && (
+          <p className="px-1 text-xs text-zinc-500">{t("folders.noFiles")}</p>
         )}
         {files.map((f) => (
           <button
@@ -545,9 +1022,9 @@ function FoldersPane({
               setSelectedFile(f.relativePath);
               setSelectedSnap(null);
             }}
-            className={`block w-full truncate rounded px-2 py-1.5 text-left font-mono text-xs ${
+            className={`block w-full truncate rounded-md px-2 py-1.5 text-left font-mono text-xs transition-colors ${
               selectedFile === f.relativePath
-                ? "bg-zinc-800 text-white"
+                ? "border-l-2 border-emerald-500 bg-zinc-800 pl-[6px] text-white"
                 : "text-zinc-400 hover:bg-zinc-800/50"
             }`}
           >
@@ -555,16 +1032,19 @@ function FoldersPane({
           </button>
         ))}
       </section>
-      <section className="col-span-6 flex flex-col gap-2 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+      <section className="col-span-6 flex flex-col gap-3 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
         <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-zinc-500">
+            {t("folders.compare.label")}
+          </label>
           <select
             className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs"
             value={compare}
             onChange={(e) => setCompare(e.target.value as CompareMode)}
           >
-            <option value="previous">Previous version</option>
-            <option value="current">Current file on disk</option>
-            <option value="pick">Pick another version…</option>
+            <option value="previous">{t("folders.compare.previous")}</option>
+            <option value="current">{t("folders.compare.current")}</option>
+            <option value="pick">{t("folders.compare.pick")}</option>
           </select>
           {compare === "pick" && (
             <select
@@ -572,12 +1052,13 @@ function FoldersPane({
               value={comparePickSha ?? ""}
               onChange={(e) => setComparePickSha(e.target.value || null)}
             >
-              <option value="">Select commit</option>
+              <option value="">{t("folders.compare.selectCommit")}</option>
               {snaps.map((s) => (
                 <option key={s.commitSha} value={s.commitSha}>
                   {s.commitSha.slice(0, 7)} —{" "}
                   {formatDistanceToNow(parseISO(s.timestamp), {
                     addSuffix: true,
+                    locale,
                   })}
                 </option>
               ))}
@@ -585,57 +1066,255 @@ function FoldersPane({
           )}
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             className="ml-auto text-xs"
-            disabled={!selectedSnap}
+            disabled={!selectedFolderId || !selectedFile}
+            title={selectedFile ?? undefined}
+            onClick={() => {
+              if (!selectedFolderId || !selectedFile) return;
+              void openWatchedFile(selectedFolderId, selectedFile).catch((e) => {
+                alert(`Couldn't open file: ${String(e)}`);
+              });
+            }}
+          >
+            {t("folders.openFile")}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="text-xs"
+            disabled={!selectedSnap || restoring}
             onClick={() => void onRestore()}
           >
-            Restore this version
+            {restoring && <Spinner className="mr-2" />}
+            {restoring ? t("folders.restoring") : t("folders.restore")}
           </Button>
         </div>
-        <div className="max-h-40 overflow-auto rounded border border-zinc-800">
-          {snaps.map((s) => (
-            <button
-              key={s.commitSha}
-              type="button"
-              onClick={() => setSelectedSnap(s)}
-              className={`block w-full border-b border-zinc-800 px-2 py-1.5 text-left text-xs last:border-0 ${
-                selectedSnap?.commitSha === s.commitSha
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-400 hover:bg-zinc-800/40"
-              }`}
-            >
-              {formatDistanceToNow(parseISO(s.timestamp), { addSuffix: true })}{" "}
-              <span className="font-mono text-zinc-500">{s.commitSha.slice(0, 7)}</span>
-            </button>
-          ))}
+        <div className="max-h-44 overflow-auto rounded-md border border-zinc-800 bg-zinc-950/40">
+          {loadingSnaps && (
+            <div className="space-y-1 p-2">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-9 animate-pulse rounded bg-zinc-900/60"
+                />
+              ))}
+            </div>
+          )}
+          {!loadingSnaps && selectedFile && snaps.length === 0 && (
+            <p className="px-3 py-2 text-xs text-zinc-500">
+              {t("folders.noSnapshots")}
+            </p>
+          )}
+          {!loadingSnaps && !selectedFile && (
+            <p className="px-3 py-2 text-xs text-zinc-500">
+              {t("folders.pickFile")}
+            </p>
+          )}
+          {!loadingSnaps &&
+            snaps.map((s) => {
+              const active = selectedSnap?.commitSha === s.commitSha;
+              return (
+                <button
+                  key={s.commitSha}
+                  type="button"
+                  onClick={() => setSelectedSnap(s)}
+                  className={`block w-full border-b border-zinc-800 px-3 py-2 text-left text-xs transition-colors last:border-0 ${
+                    active
+                      ? "border-l-2 border-emerald-500 bg-zinc-800/80 pl-[10px] text-white"
+                      : "text-zinc-300 hover:bg-zinc-800/40"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 truncate">
+                      {formatDistanceToNow(parseISO(s.timestamp), {
+                        addSuffix: true,
+                        locale,
+                      })}
+                    </span>
+                    <StatBadge snap={s} />
+                    <span
+                      className="font-mono text-[10px] text-zinc-500"
+                      title={formatDate(parseISO(s.timestamp), "PPpp", { locale })}
+                    >
+                      {s.commitSha.slice(0, 7)}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
         </div>
+        {selectedSnap && fileBaseName && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">
+            <span className="font-mono text-zinc-200">{fileBaseName}</span>
+            <span className="text-zinc-600">·</span>
+            <CopyShaButton sha={selectedSnap.commitSha} />
+            <span className="text-zinc-600">·</span>
+            <span title={formatDate(parseISO(selectedSnap.timestamp), "PPpp", { locale })}>
+              {formatDistanceToNow(parseISO(selectedSnap.timestamp), {
+                addSuffix: true,
+                locale,
+              })}
+            </span>
+            <StatBadge snap={selectedSnap} className="ml-auto" />
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">{renderDiff()}</div>
       </section>
     </div>
   );
 }
 
+// ----------------------------- Activity pane -----------------------------
+
+function ActivityPane({
+  locale,
+  onOpen,
+}: {
+  locale: Locale;
+  onOpen: (entry: ActivityEntry) => void;
+}) {
+  const { t } = useTranslation();
+  const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    listRecentChanges(200)
+      .then((rows) => {
+        setEntries(rows);
+        setErr(null);
+      })
+      .catch((e) => setErr(String(e)));
+  }, []);
+
+  useEffect(() => {
+    load();
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+    void onSnapshotCreated(() => {
+      if (!cancelled) load();
+    }).then((u) => unsubs.push(u));
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
+  }, [load]);
+
+  if (err) {
+    return <p className="text-sm text-red-300">{err}</p>;
+  }
+  if (entries === null) {
+    return (
+      <p className="text-sm text-zinc-500">
+        <Spinner className="mr-2" />
+        {t("activity.loading")}
+      </p>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="mx-auto max-w-md space-y-2 p-10 text-center text-sm text-zinc-400">
+        <h2 className="text-lg font-semibold text-white">
+          {t("activity.title")}
+        </h2>
+        <p>{t("activity.empty")}</p>
+      </div>
+    );
+  }
+
+  const groups = new Map<string, ActivityEntry[]>();
+  for (const e of entries) {
+    const d = parseISO(e.timestamp);
+    let key: string;
+    if (isToday(d)) key = t("activity.today");
+    else if (isYesterday(d)) key = t("activity.yesterday");
+    else key = formatDate(d, "PPP", { locale });
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
+  }
+
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col gap-4">
+      <header>
+        <h2 className="text-lg font-semibold text-white">
+          {t("activity.title")}
+        </h2>
+        <p className="text-xs text-zinc-500">{t("activity.subtitle")}</p>
+      </header>
+      {[...groups.entries()].map(([day, rows]) => (
+        <section key={day} className="space-y-1">
+          <h3 className="px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {day}
+          </h3>
+          <div className="overflow-hidden rounded-lg border border-zinc-800">
+            {rows.map((entry, i) => {
+              const fileBase =
+                entry.relativePath.split("/").pop() ?? entry.relativePath;
+              return (
+                <button
+                  key={`${entry.commitSha}:${entry.relativePath}:${i}`}
+                  type="button"
+                  onClick={() => onOpen(entry)}
+                  className="flex w-full items-center gap-3 border-b border-zinc-800 bg-zinc-900/30 px-3 py-2 text-left text-sm transition-colors last:border-0 hover:bg-zinc-800/40"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono text-zinc-200">
+                      {fileBase}
+                    </div>
+                    <div className="truncate text-xs text-zinc-500">
+                      {entry.folderName}
+                      {entry.relativePath !== fileBase && (
+                        <span className="text-zinc-600">
+                          {" · "}
+                          {entry.relativePath}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <StatBadge snap={entry} />
+                  <span
+                    className="w-28 shrink-0 text-right text-xs text-zinc-500"
+                    title={formatDate(parseISO(entry.timestamp), "PPpp", {
+                      locale,
+                    })}
+                  >
+                    {formatDistanceToNow(parseISO(entry.timestamp), {
+                      addSuffix: true,
+                      locale,
+                    })}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+// ----------------------------- Settings pane -----------------------------
+
 function SettingsPane({
   cfg,
-  extInput,
-  setExtInput,
-  settingsPreview,
-  setSettingsPreview,
   onReload,
 }: {
   cfg: Config;
-  extInput: string;
-  setExtInput: (s: string) => void;
-  settingsPreview: string;
-  setSettingsPreview: (s: string) => void;
-  onReload: () => void;
+  onReload: () => Promise<void>;
 }) {
+  const { t, i18n } = useTranslation();
+  const [extInput, setExtInput] = useState("");
+  const [previewById, setPreviewById] = useState<Record<string, string>>({});
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <h2 className="text-lg font-semibold text-white">Settings</h2>
+      <h2 className="text-lg font-semibold text-white">{t("settings.title")}</h2>
+
       <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
-        <h3 className="text-sm font-medium text-zinc-300">Watched folders</h3>
+        <h3 className="text-sm font-medium text-zinc-300">
+          {t("settings.watchedFolders")}
+        </h3>
         {cfg.watchedFolders.map((f) => (
           <div
             key={f.id}
@@ -652,7 +1331,7 @@ function SettingsPane({
                   );
                 }}
               />
-              Enabled
+              {t("settings.enabled")}
             </label>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -661,7 +1340,7 @@ function SettingsPane({
                 className="text-xs text-red-300"
                 onClick={() => void removeWatchedFolder(f.id).then(() => onReload())}
               >
-                Remove
+                {t("settings.remove")}
               </Button>
               <Button
                 type="button"
@@ -670,15 +1349,19 @@ function SettingsPane({
                 onClick={async () => {
                   try {
                     const p = await previewFolderMatches(f.id);
-                    setSettingsPreview(
-                      `${p.matched.length} matched, ${p.ignored.length} ignored`,
-                    );
+                    setPreviewById((prev) => ({
+                      ...prev,
+                      [f.id]: t("settings.previewResult", {
+                        matched: p.matched.length,
+                        ignored: p.ignored.length,
+                      }),
+                    }));
                   } catch (e) {
                     alert(String(e));
                   }
                 }}
               >
-                Preview matches
+                {t("settings.preview")}
               </Button>
               <Button
                 type="button"
@@ -686,22 +1369,25 @@ function SettingsPane({
                 className="text-xs"
                 onClick={() => void revealPath(f.path)}
               >
-                Reveal in Finder
+                {t("settings.reveal")}
               </Button>
             </div>
+            {previewById[f.id] && (
+              <p className="text-xs text-zinc-500">{previewById[f.id]}</p>
+            )}
           </div>
         ))}
         <Button
           type="button"
           variant="secondary"
           onClick={async () => {
-            const dir = await open({ directory: true, multiple: false });
-            if (typeof dir !== "string" || !dir) return;
-            const exts = extInput
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
             try {
+              const dir = await pickDirectory();
+              if (!dir) return;
+              const exts = extInput
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
               await addWatchedFolder(dir, exts.length ? exts : ["md", "docx"]);
               await onReload();
             } catch (e) {
@@ -709,63 +1395,273 @@ function SettingsPane({
             }
           }}
         >
-          Add folder
+          {t("settings.add")}
         </Button>
         <input
           className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-200"
-          placeholder="extensions for new folder (comma-separated)"
+          placeholder={t("settings.addHint")}
           value={extInput}
           onChange={(e) => setExtInput(e.target.value)}
         />
-        {settingsPreview && (
-          <p className="text-xs text-zinc-500">{settingsPreview}</p>
-        )}
       </div>
+
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
-        <h3 className="text-sm font-medium text-zinc-300">Watching</h3>
+        <h3 className="text-sm font-medium text-zinc-300">
+          {t("settings.watching")}
+        </h3>
         <div className="flex gap-2">
           <Button type="button" variant="secondary" onClick={() => void pauseWatching()}>
-            Pause
+            {t("settings.pause")}
           </Button>
           <Button type="button" variant="secondary" onClick={() => void resumeWatching()}>
-            Resume
+            {t("settings.resume")}
           </Button>
         </div>
         <WatcherStatus />
       </div>
+
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
-        <h3 className="text-sm font-medium text-zinc-300">Storage</h3>
+        <h3 className="text-sm font-medium text-zinc-300">
+          {t("settings.storage")}
+        </h3>
         <StorageBlock />
-        <Button type="button" variant="ghost" className="text-xs" onClick={() => void runRetentionNow()}>
-          Run retention now (v1 no-op)
+        <Button
+          type="button"
+          variant="ghost"
+          className="text-xs"
+          onClick={() => void runRetentionNow()}
+        >
+          {t("settings.retention")}
         </Button>
+      </div>
+
+      <div
+        key={i18n.language}
+        className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4"
+      >
+        <h3 className="text-sm font-medium text-zinc-300">
+          {t("settings.language")}
+        </h3>
+        <div className="flex flex-col gap-2">
+          {(["en", "pt-BR"] as const).map((lng) => (
+            <label
+              key={lng}
+              className="flex cursor-pointer items-center gap-2 text-sm text-zinc-200"
+            >
+              <input
+                type="radio"
+                name="lang"
+                checked={normalizeUiLang(i18n.language) === lng}
+                onChange={() => {
+                  void i18n.changeLanguage(lng);
+                }}
+              />
+              {lng === "en"
+                ? t("settings.languageEnglish")
+                : t("settings.languagePortuguese")}
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
 function WatcherStatus() {
-  const [st, setSt] = useState<string>("");
+  const { t } = useTranslation();
+  const [paused, setPaused] = useState<boolean | null>(null);
   useEffect(() => {
     void getStatus()
-      .then((s) =>
-        setSt(
-          s.watchingPaused ? "Paused" : "Running",
-        ),
-      )
-      .catch(() => setSt("?"));
+      .then((s) => setPaused(s.watchingPaused))
+      .catch(() => setPaused(null));
   }, []);
-  return <p className="text-xs text-zinc-500">Watcher: {st}</p>;
+  const label =
+    paused === null
+      ? "?"
+      : paused
+        ? t("settings.statusPaused")
+        : t("settings.statusRunning");
+  return (
+    <p className="text-xs text-zinc-500">
+      {t("settings.watcherStatus", { status: label })}
+    </p>
+  );
 }
 
 function StorageBlock() {
+  const { t } = useTranslation();
   const [u, setU] = useState<string>("");
   useEffect(() => {
     void getStorageUsage()
       .then((s) => setU(formatBytes(s.totalBytes)))
       .catch(() => setU("?"));
   }, []);
-  return <p className="text-xs text-zinc-500">Total snapshot storage: {u}</p>;
+  return (
+    <p className="text-xs text-zinc-500">
+      {t("settings.totalStorage", { n: u })}
+    </p>
+  );
+}
+
+// ----------------------------- Help pane -----------------------------
+
+type HelpTopic =
+  | "howItWorks"
+  | "restoring"
+  | "pauseResume"
+  | "dataLocation"
+  | "troubleshooting";
+
+const HELP_TOPICS: HelpTopic[] = [
+  "howItWorks",
+  "restoring",
+  "pauseResume",
+  "dataLocation",
+  "troubleshooting",
+];
+
+function HelpPane() {
+  const { t } = useTranslation();
+  const [topic, setTopic] = useState<HelpTopic>("howItWorks");
+  return (
+    <div className="mx-auto flex max-w-4xl gap-4">
+      <aside className="w-56 shrink-0 space-y-1 rounded-lg border border-zinc-800 bg-zinc-900/30 p-2">
+        <h2 className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          {t("help.title")}
+        </h2>
+        {HELP_TOPICS.map((k) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTopic(k)}
+            className={`block w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+              topic === k
+                ? "border-l-2 border-emerald-500 bg-zinc-800 pl-[6px] text-white"
+                : "text-zinc-400 hover:bg-zinc-800/50"
+            }`}
+          >
+            {t(`help.topics.${k}`)}
+          </button>
+        ))}
+      </aside>
+      <article className="flex-1 space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/30 p-6 text-sm leading-relaxed text-zinc-300">
+        {topic === "howItWorks" && <HelpHowItWorks />}
+        {topic === "restoring" && <HelpRestoring />}
+        {topic === "pauseResume" && <HelpPauseResume />}
+        {topic === "dataLocation" && <HelpDataLocation />}
+        {topic === "troubleshooting" && <HelpTroubleshooting />}
+      </article>
+    </div>
+  );
+}
+
+function HelpHeading({ children }: { children: ReactNode }) {
+  return <h3 className="text-base font-semibold text-white">{children}</h3>;
+}
+
+function HelpSubheading({ children }: { children: ReactNode }) {
+  return (
+    <h4 className="pt-2 text-sm font-semibold text-zinc-100">{children}</h4>
+  );
+}
+
+function HelpCode({ children }: { children: ReactNode }) {
+  return (
+    <code className="rounded bg-zinc-950 px-1.5 py-0.5 font-mono text-xs text-zinc-100">
+      {children}
+    </code>
+  );
+}
+
+function HelpHowItWorks() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <HelpHeading>{t("help.howItWorks.title")}</HelpHeading>
+      <p>{t("help.howItWorks.intro")}</p>
+      <HelpSubheading>{t("help.howItWorks.snapshotTitle")}</HelpSubheading>
+      <p>{t("help.howItWorks.snapshot")}</p>
+      <HelpSubheading>{t("help.howItWorks.debounceTitle")}</HelpSubheading>
+      <p>{t("help.howItWorks.debounce")}</p>
+      <HelpSubheading>{t("help.howItWorks.dedupTitle")}</HelpSubheading>
+      <p>{t("help.howItWorks.dedup")}</p>
+    </>
+  );
+}
+
+function HelpRestoring() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <HelpHeading>{t("help.restoring.title")}</HelpHeading>
+      <p>{t("help.restoring.intro")}</p>
+      <ol className="list-decimal space-y-1 pl-5 text-zinc-200">
+        <li>{t("help.restoring.step1")}</li>
+        <li>{t("help.restoring.step2")}</li>
+        <li>{t("help.restoring.step3")}</li>
+      </ol>
+      <HelpSubheading>{t("help.restoring.safetyTitle")}</HelpSubheading>
+      <p>{t("help.restoring.safety")}</p>
+      <HelpSubheading>{t("help.restoring.wordTitle")}</HelpSubheading>
+      <p>{t("help.restoring.word")}</p>
+    </>
+  );
+}
+
+function HelpPauseResume() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <HelpHeading>{t("help.pauseResume.title")}</HelpHeading>
+      <p>{t("help.pauseResume.intro")}</p>
+      <p>{t("help.pauseResume.where")}</p>
+      <ul className="list-disc space-y-1 pl-5 text-zinc-200">
+        <li>{t("help.pauseResume.tray")}</li>
+        <li>{t("help.pauseResume.settings")}</li>
+      </ul>
+      <HelpSubheading>{t("help.pauseResume.behaviorTitle")}</HelpSubheading>
+      <p>{t("help.pauseResume.behavior")}</p>
+    </>
+  );
+}
+
+function HelpDataLocation() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <HelpHeading>{t("help.dataLocation.title")}</HelpHeading>
+      <p>{t("help.dataLocation.intro")}</p>
+      <HelpSubheading>{t("help.dataLocation.configTitle")}</HelpSubheading>
+      <p>
+        {t("help.dataLocation.config").replace(
+          "~/Library/Application Support/AutoVersion/config.json",
+          "",
+        )}
+        <HelpCode>~/Library/Application Support/AutoVersion/config.json</HelpCode>
+      </p>
+      <HelpSubheading>{t("help.dataLocation.snapshotsTitle")}</HelpSubheading>
+      <p>{t("help.dataLocation.snapshots")}</p>
+      <HelpSubheading>{t("help.dataLocation.logsTitle")}</HelpSubheading>
+      <p>{t("help.dataLocation.logs")}</p>
+      <HelpSubheading>{t("help.dataLocation.nukeTitle")}</HelpSubheading>
+      <p>{t("help.dataLocation.nuke")}</p>
+    </>
+  );
+}
+
+function HelpTroubleshooting() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <HelpHeading>{t("help.troubleshooting.title")}</HelpHeading>
+      <HelpSubheading>{t("help.troubleshooting.noSnapshotsTitle")}</HelpSubheading>
+      <p>{t("help.troubleshooting.noSnapshots")}</p>
+      <HelpSubheading>{t("help.troubleshooting.manyVersionsTitle")}</HelpSubheading>
+      <p>{t("help.troubleshooting.manyVersions")}</p>
+      <HelpSubheading>{t("help.troubleshooting.gatekeeperTitle")}</HelpSubheading>
+      <p>{t("help.troubleshooting.gatekeeper")}</p>
+    </>
+  );
 }
 
 export default App;

@@ -102,3 +102,37 @@ pub async fn reveal_path(app: AppHandle, path: String) -> Result<(), AppError> {
         .map_err(|e| AppError::Io(e.to_string()))?;
     Ok(())
 }
+
+/// Open a file in the OS default application (macOS `open` equivalent).
+#[tauri::command]
+pub async fn open_path(app: AppHandle, path: String) -> Result<(), AppError> {
+    if !std::path::Path::new(&path).exists() {
+        return Err(AppError::NotFound(path));
+    }
+    app.opener()
+        .open_path(&path, None::<&str>)
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
+}
+
+/// Open a file inside a watched folder by `(folder_id, relative_path)`.
+#[tauri::command]
+pub async fn open_watched_file(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<Config>>>,
+    folder_id: String,
+    relative_path: String,
+) -> Result<(), AppError> {
+    let abs = {
+        let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
+        let folder = folder_by_id(&cfg, &folder_id)?;
+        folder.path.join(&relative_path)
+    };
+    if !abs.exists() {
+        return Err(AppError::NotFound(abs.display().to_string()));
+    }
+    app.opener()
+        .open_path(abs.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
+}

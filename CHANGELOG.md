@@ -1,10 +1,63 @@
 # Changelog
 
-## [0.1.0] — Unreleased
+## [0.2.0] — 2026-05-09
+
+### Added
+
+- **Open file** action in the Folders pane (next to Restore) — opens the selected file in the OS default application via `tauri-plugin-opener`. New IPC commands `open_path` and `open_watched_file`.
+- **Two-pane GitHub-style diff** ([`src/components/TwoPaneLineDiff.tsx`](src/components/TwoPaneLineDiff.tsx)): equal-height rows, removals on the left only (red), additions on the right only (green), unchanged on both, with linked vertical scroll. Used for both text diffs and `.docx` (after Mammoth text extraction). Diff column headers reflect the active compare mode (previous / current on disk / picked revision).
+
+### Fixed
+
+- **Language switching now actually applies translations.** The previous config combined `nonExplicitSupportedLngs: true` with `supportedLngs: ["en", "pt-BR"]`, which made i18next set `language = "pt-BR"` while resolving lookups under bare `pt` (no bundle) and silently falling back to English. Now: `supportedLngs: ["en", "pt", "pt-BR"]`, `load: "currentOnly"`, and the Portuguese bundle is registered under both `pt-BR` and `pt`.
+- App-level forced re-render on `i18n.on("languageChanged")` so the entire tree refreshes regardless of react-i18next's internal subscription behavior under StrictMode.
+
+## [0.1.0] — 2026-05-09
+
+### First-launch wizard
+
+- Replaced single-screen Onboarding with a 4-step wizard: Welcome → Pick folder → Choose extensions (presets: Word / Markdown & text / Code / Custom) → Confirm + start at login. Progress dots, Back/Next/Finish, plus a discreet **Skip setup** shortcut.
+- Triggers whenever `cfg.watchedFolders.length === 0` (so it also reappears if the user removes their last folder).
+
+### Activity feed
+
+- New **Activity** sidebar tab with a global feed of every snapshot across every watched folder, grouped by day (Today / Yesterday / explicit date), refreshes live on `snapshot-created`.
+- Clicking an entry deep-links into the Folders pane, selects the file + commit, and switches compare mode to "previous version".
+- Backend: new `list_recent_changes(limit)` IPC command that merges per-folder revwalks by timestamp DESC and returns one `ActivityEntry` per (commit, file).
+
+### Inline change stats
+
+- `Snapshot` and `ActivityEntry` now include `addedLines`, `removedLines`, `isBinary`, `byteDelta`, and `isTombstone`. Computed on the Rust side via `git2::DiffStats` against the parent tree, scoped per file via `DiffOptions::pathspec`.
+- Snapshot rows in the Folders pane and Activity feed render a `+N -M` badge (or `modified` / `deleted` for binary / tombstone commits).
+
+### Folders pane polish
+
+- Two-line snapshot rows with relative time, stat badge, and copyable 7-char SHA.
+- Header row above the diff: filename · short-SHA (with copy button) · relative time, with the right-side stat badge.
+- Loading skeleton for snapshots, "No differences" empty state when both sides are byte-equal, "Pick a file to see its history" / "No snapshots yet" empty states.
+- Selected items (folder, file, snapshot, sidebar tab) get a left accent border for clearer focus.
+
+### Restore UX
+
+- Post-restore delay is gone: `Restore this version` now flips an inline spinner + disables itself, and the moment the IPC resolves we proactively refresh `listSnapshots` and `getCurrentContent` instead of waiting on the watcher's 2 s debouncer. The `restore-completed` toast still fires off the backend event.
+
+### In-app Help
+
+- New **Help** sidebar tab with five topics: How AutoVersion works, Restoring a version, Pause / Resume, Where AutoVersion stores your data, Troubleshooting.
+- Topics are typed React components in `src/App.tsx` (Help* helpers), prose lives in the i18n catalog, so pt-BR translations come for free.
+
+### i18n (English + Português Brasil)
+
+- Added `i18next` + `react-i18next` + `i18next-browser-languagedetector`.
+- `src/i18n/index.ts` initializes detection (localStorage → navigator), fallback `en`, supported `["en", "pt-BR"]`, cache key `autoversion.lang`.
+- Locales in `src/i18n/locales/{en,pt-BR}.json` cover navigation, wizard, folders, activity, settings, help, about, and common actions.
+- Settings → **Language** radio (English / Português (Brasil)) bound to `i18n.changeLanguage`.
+- `date-fns` locale picked from `i18n.resolvedLanguage` so relative times in snapshot rows and the Activity feed match the UI language.
 
 ### Fixed
 
 - Startup panic from `tauri-plugin-log` (“logger already initialized”) by removing that plugin; Rust logs still go to `~/Library/Logs/AutoVersion/autoversion.log` via `tracing-subscriber` (`init_tracing_file`).
+- Onboarding silently dropped the just-added folder because the old `setConfig({ ...cfg, startAtLogin })` call overwrote the config with a stale `cfg` snapshot. The new wizard refetches the live config before persisting `startAtLogin`.
 
 ### Documentation
 

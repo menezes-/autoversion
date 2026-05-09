@@ -41,6 +41,25 @@ export interface FileEntry {
 export interface Snapshot {
   commitSha: string;
   timestamp: string;
+  addedLines: number;
+  removedLines: number;
+  isBinary: boolean;
+  byteDelta: number;
+  isTombstone: boolean;
+}
+
+export interface ActivityEntry {
+  folderId: string;
+  folderPath: string;
+  folderName: string;
+  relativePath: string;
+  commitSha: string;
+  timestamp: string;
+  addedLines: number;
+  removedLines: number;
+  isBinary: boolean;
+  byteDelta: number;
+  isTombstone: boolean;
 }
 
 export interface IgnoredPath {
@@ -111,6 +130,12 @@ export async function listSnapshots(
   return invoke<Snapshot[]>("list_snapshots", { folderId, relativePath });
 }
 
+export async function listRecentChanges(
+  limit: number = 200,
+): Promise<ActivityEntry[]> {
+  return invoke<ActivityEntry[]>("list_recent_changes", { limit });
+}
+
 export async function getSnapshotContent(
   folderId: string,
   commitSha: string,
@@ -159,6 +184,17 @@ export async function resumeWatching(): Promise<void> {
 
 export async function revealPath(path: string): Promise<void> {
   return invoke<void>("reveal_path", { path });
+}
+
+export async function openPath(path: string): Promise<void> {
+  return invoke<void>("open_path", { path });
+}
+
+export async function openWatchedFile(
+  folderId: string,
+  relativePath: string,
+): Promise<void> {
+  return invoke<void>("open_watched_file", { folderId, relativePath });
 }
 
 export async function getStatus(): Promise<Status> {

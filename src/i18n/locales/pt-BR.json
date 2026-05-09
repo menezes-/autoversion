@@ -1,0 +1,201 @@
+{
+  "nav": {
+    "folders": "Pastas",
+    "activity": "Atividade",
+    "settings": "Ajustes",
+    "help": "Ajuda",
+    "about": "Sobre"
+  },
+  "common": {
+    "loading": "Carregando…",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "close": "Fechar",
+    "next": "Avançar",
+    "back": "Voltar",
+    "done": "Concluído",
+    "skip": "Pular configuração",
+    "change": "Alterar…",
+    "copy": "Copiar",
+    "copied": "Copiado"
+  },
+  "wizard": {
+    "step": "Etapa {{n}} de {{total}}",
+    "welcome": {
+      "title": "O AutoVersion guarda o histórico de cada save, então nada se perde.",
+      "body": "O AutoVersion roda discretamente na sua barra de menus e registra um snapshot toda vez que você salva um arquivo dentro das pastas protegidas. Você pode abrir versões antigas, ver o que mudou e voltar qualquer arquivo a um estado anterior com um clique.",
+      "next": "Começar"
+    },
+    "pickFolder": {
+      "title": "Escolha uma pasta para proteger",
+      "body": "O AutoVersion vai observar essa pasta em busca de mudanças. Boas escolhas: a pasta Documentos, um diretório de um projeto ou onde você guarda arquivos em andamento.",
+      "button": "Escolher pasta…",
+      "picked": "Selecionada:"
+    },
+    "extensions": {
+      "title": "Quais tipos de arquivo o AutoVersion deve acompanhar?",
+      "body": "Escolha um preset ou defina sua própria lista. Tudo que estiver fora dela é ignorado.",
+      "preset": {
+        "word": "Documentos do Word (.docx)",
+        "wordHint": "Ideal para quem escreve no Microsoft Word.",
+        "markdown": "Markdown e texto",
+        "markdownHint": ".md, .markdown, .txt",
+        "code": "Código",
+        "codeHint": "Linguagens comuns: .py, .ts, .rs, .js, .go, .java, …",
+        "custom": "Personalizado",
+        "customHint": "Lista separada por vírgulas, sem pontos.",
+        "customPlaceholder": "ex.: docx, md, tex"
+      }
+    },
+    "confirm": {
+      "title": "Tudo certo",
+      "summary": "O AutoVersion vai proteger <strong>{{folder}}</strong> e observar <strong>{{exts}}</strong>.",
+      "startAtLogin": "Iniciar o AutoVersion automaticamente quando eu fizer login",
+      "finish": "Começar a proteger"
+    }
+  },
+  "folders": {
+    "emptyFolder": "Escolha uma pasta para ver seus arquivos.",
+    "noFiles": "Nada salvo ainda — edite um arquivo nesta pasta para criar o primeiro snapshot.",
+    "noSnapshots": "Ainda não há snapshots desse arquivo.",
+    "pickFile": "Escolha um arquivo para ver seu histórico.",
+    "noDifferences": "Não há diferenças entre essas duas versões.",
+    "loadingHistory": "Carregando histórico…",
+    "snapshots": "Snapshots",
+    "compare": {
+      "label": "Comparar com",
+      "previous": "Versão anterior",
+      "current": "Arquivo atual no disco",
+      "pick": "Escolher outra versão…",
+      "selectCommit": "Selecione uma versão"
+    },
+    "filesColumn": "Arquivos",
+    "diff": {
+      "leftPrevious": "Revisão anterior",
+      "rightSelected": "Esta revisão",
+      "leftSnapshot": "Snapshot",
+      "rightDisk": "Arquivo atual no disco",
+      "leftPicked": "Revisão comparada",
+      "rightPicked": "Esta revisão"
+    },
+    "restore": "Restaurar esta versão",
+    "restoring": "Restaurando…",
+    "openFile": "Abrir arquivo",
+    "revealFile": "Mostrar no Finder",
+    "restoreConfirm": "Substituir {{file}} por esta versão? O arquivo atual será salvo como snapshot antes.",
+    "docxWarning": "Se o arquivo estiver aberto no Word, feche-o antes de restaurar.",
+    "restoreToast": "Restaurado a partir de {{sha}}",
+    "stats": {
+      "added": "+{{n}}",
+      "removed": "-{{n}}",
+      "modified": "modificado",
+      "deleted": "removido",
+      "added_one": "+1 linha",
+      "added_other": "+{{count}} linhas",
+      "removed_one": "-1 linha",
+      "removed_other": "-{{count}} linhas"
+    },
+    "diffHeader": "{{file}} · {{sha}} · {{when}}",
+    "metaOnly": "Apenas metadados (binário opaco)",
+    "leftBytes": "Esquerda: {{n}} bytes",
+    "rightBytes": "Direita: {{n}} bytes"
+  },
+  "activity": {
+    "title": "Mudanças recentes",
+    "subtitle": "Todos os snapshots já feitos pelo AutoVersion, do mais recente ao mais antigo.",
+    "empty": "Nenhuma mudança ainda. Edite um arquivo em qualquer pasta protegida para vê-lo aqui.",
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "viewInFolders": "Abrir em Pastas",
+    "loading": "Carregando atividade recente…"
+  },
+  "settings": {
+    "title": "Ajustes",
+    "watchedFolders": "Pastas observadas",
+    "enabled": "Ativada",
+    "add": "Adicionar pasta",
+    "addHint": "Extensões para a nova pasta (separadas por vírgula)",
+    "remove": "Remover",
+    "preview": "Pré-visualizar correspondências",
+    "previewResult": "{{matched}} correspondências, {{ignored}} ignoradas",
+    "reveal": "Mostrar no Finder",
+    "watching": "Observando",
+    "watcherStatus": "Watcher: {{status}}",
+    "statusRunning": "Em execução",
+    "statusPaused": "Pausado",
+    "pause": "Pausar",
+    "resume": "Retomar",
+    "storage": "Armazenamento",
+    "totalStorage": "Armazenamento total dos snapshots: {{n}}",
+    "retention": "Aplicar retenção agora (sem efeito na v1)",
+    "language": "Idioma",
+    "languageEnglish": "English",
+    "languagePortuguese": "Português (Brasil)"
+  },
+  "help": {
+    "title": "Ajuda",
+    "topics": {
+      "howItWorks": "Como o AutoVersion funciona",
+      "restoring": "Restaurando uma versão",
+      "pauseResume": "Pausar e retomar",
+      "dataLocation": "Onde o AutoVersion guarda seus dados",
+      "troubleshooting": "Solução de problemas"
+    },
+    "howItWorks": {
+      "title": "Como o AutoVersion funciona",
+      "intro": "O AutoVersion fica na sua barra de menus e observa as pastas que você manda proteger. Toda vez que um arquivo é salvo, ele tira um snapshot — uma cópia completa do arquivo naquele momento.",
+      "snapshotTitle": "O que é um snapshot?",
+      "snapshot": "Um snapshot é uma cópia completa de um arquivo num ponto do tempo, guardada dentro do AutoVersion (não na sua pasta). Cada snapshot é independente dos demais, então apagar um não afeta os outros.",
+      "debounceTitle": "Por que nem todo save vira um snapshot?",
+      "debounce": "Quando você aperta salvar em programas como o Microsoft Word, o app faz várias operações de arquivo em sequência rápida. O AutoVersion espera cerca de 2 segundos para tudo se acomodar antes de fazer o snapshot, então um save seu vira um snapshot só.",
+      "dedupTitle": "E se eu salvar sem alterar nada?",
+      "dedup": "O AutoVersion calcula a impressão digital SHA-256 de cada arquivo. Se o conteúdo for idêntico ao snapshot anterior, nenhum novo snapshot é criado."
+    },
+    "restoring": {
+      "title": "Restaurando uma versão",
+      "intro": "Volte qualquer arquivo a um estado anterior em dois cliques.",
+      "step1": "Abra a aba Pastas, escolha uma pasta e depois um arquivo.",
+      "step2": "Clique em qualquer snapshot na lista para pré-visualizar o diff.",
+      "step3": "Clique em \"Restaurar esta versão\" e confirme.",
+      "safetyTitle": "O que acontece durante a restauração?",
+      "safety": "Antes de sobrescrever o arquivo, o AutoVersion tira um snapshot do estado atual. Restaurar nunca é destrutivo — você sempre pode voltar a onde estava.",
+      "wordTitle": "Sobre arquivos do Word",
+      "word": "Se um .docx estiver aberto no Microsoft Word, feche-o antes. O Word mantém o arquivo travado e impede a substituição."
+    },
+    "pauseResume": {
+      "title": "Pausar e retomar",
+      "intro": "Às vezes você não quer que o AutoVersion tire snapshots — por exemplo, enquanto roda um script que mexe em muitos arquivos.",
+      "where": "Você pode pausar de dois lugares:",
+      "tray": "O ícone na barra de menus → Pausar.",
+      "settings": "A aba Ajustes → Observando → Pausar.",
+      "behaviorTitle": "O que pausar realmente faz?",
+      "behavior": "Enquanto pausado, o AutoVersion ignora eventos de salvamento. Snapshots existentes continuam disponíveis para restauração. Retome para voltar a proteger."
+    },
+    "dataLocation": {
+      "title": "Onde o AutoVersion guarda seus dados",
+      "intro": "Tudo que o AutoVersion cria fica na sua pasta pessoal. Nada é enviado para nenhum lugar.",
+      "configTitle": "Configurações",
+      "config": "Em ~/Library/Application Support/AutoVersion/config.json — um único arquivo JSON com as pastas observadas e suas preferências.",
+      "snapshotsTitle": "Snapshots",
+      "snapshots": "Cada pasta observada tem seu próprio repositório em ~/Library/Application Support/AutoVersion/repos/<folder-id>/.",
+      "logsTitle": "Logs",
+      "logs": "Os logs de diagnóstico ficam em ~/Library/Logs/AutoVersion/autoversion.log. Útil quando precisar reportar um bug.",
+      "nukeTitle": "Apagando todos os dados do AutoVersion",
+      "nuke": "Se quiser começar do zero, encerre o AutoVersion e rode: rm -rf ~/Library/Application\\ Support/AutoVersion. Seus arquivos originais nas pastas observadas não são tocados."
+    },
+    "troubleshooting": {
+      "title": "Solução de problemas",
+      "noSnapshotsTitle": "Nenhum snapshot está aparecendo",
+      "noSnapshots": "Verifique, nesta ordem: se a pasta está com a opção Ativada ligada; se a extensão do arquivo está na lista observada; se o AutoVersion não está pausado (olhe o ícone na barra de menus); e o arquivo de log em ~/Library/Logs/AutoVersion/autoversion.log para pistas.",
+      "manyVersionsTitle": "Apareceram 10 versões para um único save do Word",
+      "manyVersions": "Não deveria acontecer — o debouncer do AutoVersion une a sequência de saves do Word num único snapshot. Se você ver isso, abra um bug e inclua algumas linhas do arquivo de log.",
+      "gatekeeperTitle": "Primeira execução bloqueada pelo Gatekeeper",
+      "gatekeeper": "O AutoVersion não é assinado. Clique com o botão direito no app e escolha Abrir na primeira vez, ou rode xattr -cr /Applications/AutoVersion.app no Terminal."
+    }
+  },
+  "about": {
+    "title": "Sobre",
+    "description": "O AutoVersion mantém snapshots automáticos dos arquivos das pastas que você escolher. Os snapshots ficam em ~/Library/Application Support/AutoVersion/repos/.",
+    "gatekeeper": "Build macOS sem assinatura: na primeira execução, clique com o botão direito → Abrir, ou rode xattr -cr /Applications/AutoVersion.app."
+  }
+}

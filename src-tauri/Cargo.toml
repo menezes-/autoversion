@@ -1,6 +1,6 @@
 [package]
 name = "autoversion"
-version = "0.1.0"
+version = "0.2.0"
 description = "AutoVersion — automatic local file versioning"
 authors = ["AutoVersion"]
 edition = "2021"
