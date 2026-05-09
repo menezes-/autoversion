@@ -11,6 +11,7 @@
 
 - **Language switching now actually applies translations.** The previous config combined `nonExplicitSupportedLngs: true` with `supportedLngs: ["en", "pt-BR"]`, which made i18next set `language = "pt-BR"` while resolving lookups under bare `pt` (no bundle) and silently falling back to English. Now: `supportedLngs: ["en", "pt", "pt-BR"]`, `load: "currentOnly"`, and the Portuguese bundle is registered under both `pt-BR` and `pt`.
 - App-level forced re-render on `i18n.on("languageChanged")` so the entire tree refreshes regardless of react-i18next's internal subscription behavior under StrictMode.
+- **macOS "AutoVersion.app is damaged" Gatekeeper error**: bundles are now ad-hoc code-signed (`signingIdentity: "-"` in [`tauri.conf.json`](src-tauri/tauri.conf.json)) so Gatekeeper shows the standard "unknown developer" prompt (right-click → Open) instead of refusing the launch. Existing v0.2.0 release assets re-uploaded with this fix.
 
 ## [0.1.0] — 2026-05-09
 
