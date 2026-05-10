@@ -16,7 +16,6 @@
 ### Distribution
 
 - **Intel macOS build** (`x86_64-apple-darwin`) shipped alongside Apple Silicon (`aarch64-apple-darwin`).
-- Reverted `signingIdentity` from `"-"` (ad-hoc) back to `null` (unsigned). On the macOS versions we tested, ad-hoc-signed bundles were triggering "AutoVersion.app is damaged and can't be opened" while truly-unsigned bundles get the friendlier "unidentified developer" prompt that right-click → Open can dismiss.
 
 ### Internal
 
