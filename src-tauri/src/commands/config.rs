@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, State};
 
+use crate::autostart::reconcile_autostart;
 use crate::config::{self, Config, WatchedFolder, WatchedFolderPatch};
 use crate::error::AppError;
 use crate::events::ConfigChangedPayload;
@@ -45,8 +46,9 @@ pub async fn set_config(
     config::save_config_to_disk(&config)?;
     {
         let mut g = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-        *g = config;
+        *g = config.clone();
     }
+    reconcile_autostart(app.clone(), config.start_at_login)?;
     emit_config_changed(&app);
     notify_watcher_reload(&app);
     Ok(())

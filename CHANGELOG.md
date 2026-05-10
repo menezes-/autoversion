@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0] — 2026-05-10
+
+### Wizard
+
+- New **language step** as the first thing the wizard asks (Settings → Language still works for later changes).
+- **Multi-select extensions**: presets are now checkboxes you can combine (Word + Markdown + Code), and **Custom** is its own checkbox with a comma-separated input. Selected extensions are unioned. Wizard is now 5 steps.
+- The wizard window is **shown automatically on first launch** (when no folders are configured). Previously the app stayed silent in the menu bar so first-time users had to find the tray icon to start onboarding.
+
+### Fixed
+
+- "No snapshots yet for this file" used to show even when the snapshot list had rows — the diff pane now distinguishes "no snapshots at all" from "snapshots exist, none selected", and **auto-selects the most recent snapshot** when a file is picked.
+- DocxDiff no longer crashes with `End of data reached / Corrupted zip ?` when one side is empty bytes (tombstoned snapshot or missing-on-disk file). It now treats empty input as empty text.
+
+### Distribution
+
+- **Intel macOS build** (`x86_64-apple-darwin`) shipped alongside Apple Silicon (`aarch64-apple-darwin`).
+
+### Internal
+
+- Start-at-login is now properly reconciled with the OS via `tauri-plugin-autostart` (`reconcile_autostart` in [`src-tauri/src/autostart.rs`](src-tauri/src/autostart.rs)). `set_config` syncs the LaunchAgent state when the toggle changes; the same reconcile runs once on launch.
+
 ## [0.2.0] — 2026-05-09
 
 ### Added
@@ -9,6 +30,7 @@
 
 ### Fixed
 
+- **Start at login** now calls `tauri-plugin-autostart` (`enable` / `disable`) so macOS actually gets a LaunchAgent (`~/Library/LaunchAgents/io.autoversion.plist`) and the app can appear under **System Settings → General → Login Items**. Previously only `config.json` was updated. Reconciliation also runs once on app launch from saved config. New **Settings → Startup** toggle to change the option after onboarding.
 - **Language switching now actually applies translations.** The previous config combined `nonExplicitSupportedLngs: true` with `supportedLngs: ["en", "pt-BR"]`, which made i18next set `language = "pt-BR"` while resolving lookups under bare `pt` (no bundle) and silently falling back to English. Now: `supportedLngs: ["en", "pt", "pt-BR"]`, `load: "currentOnly"`, and the Portuguese bundle is registered under both `pt-BR` and `pt`.
 - App-level forced re-render on `i18n.on("languageChanged")` so the entire tree refreshes regardless of react-i18next's internal subscription behavior under StrictMode.
 - **macOS "AutoVersion.app is damaged" Gatekeeper error**: bundles are now ad-hoc code-signed (`signingIdentity: "-"` in [`tauri.conf.json`](src-tauri/tauri.conf.json)) so Gatekeeper shows the standard "unknown developer" prompt (right-click → Open) instead of refusing the launch. Existing v0.2.0 release assets re-uploaded with this fix.

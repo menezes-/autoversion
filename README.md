@@ -46,8 +46,13 @@ open /Applications/AutoVersion.app
 | Config | `~/Library/Application Support/AutoVersion/config.json` |
 | Snapshots | `~/Library/Application Support/AutoVersion/repos/<folder-id>/` |
 | Logs | `~/Library/Logs/AutoVersion/autoversion.log` |
+| Start at login (when enabled) | `~/Library/LaunchAgents/io.autoversion.plist` (LaunchAgent installed by `tauri-plugin-autostart`) |
 
 Snapshots are stored as real git repos via `libgit2` — no `git` binary required on the host.
+
+### Start at login (macOS)
+
+Turn **Start AutoVersion automatically when I log in** on in **Settings** (or during the first-run wizard). AutoVersion then enables its LaunchAgent. Recent macOS versions often surface that as a notification titled **App Background Activity** (“can run in the background… Login Items & Extensions”) rather than literally saying “starts at login”—that banner still means the registration succeeded. Check **System Settings → General → Login Items & Extensions** (or **Login Items**) to see the entry; the list may show the **binary name** (`autoversion`) from the Rust package, not the window title “AutoVersion”. Confirming it worked: that settings entry exists and/or the plist file above is present. Turn the option off in Settings to remove the LaunchAgent.
 
 ## Stack
 

@@ -97,7 +97,7 @@ const PRESETS = {
   ],
 } as const;
 
-type PresetKey = "word" | "markdown" | "code" | "custom";
+type PresetKey = "word" | "markdown" | "code";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -219,11 +219,23 @@ function App() {
   useEffect(() => {
     if (!selectedFolderId || !selectedFile) {
       setSnaps([]);
+      setSelectedSnap(null);
       return;
     }
     setLoadingSnaps(true);
     listSnapshots(selectedFolderId, selectedFile)
-      .then(setSnaps)
+      .then((rows) => {
+        setSnaps(rows);
+        // Auto-select the most recent snapshot so the diff pane has something
+        // to render immediately. Without this, the user sees "no snapshots"
+        // even though the list has rows.
+        setSelectedSnap((current) => {
+          if (rows.length === 0) return null;
+          const stillThere =
+            current && rows.find((r) => r.commitSha === current.commitSha);
+          return stillThere ?? rows[0] ?? null;
+        });
+      })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingSnaps(false));
   }, [selectedFolderId, selectedFile, cfg?.watchedFolders]);
@@ -367,7 +379,7 @@ function App() {
         <p className="text-sm text-zinc-500">{t("folders.pickFile")}</p>
       );
     }
-    if (loadingDiff && !selectedSnap) {
+    if (loadingSnaps || (loadingDiff && !selectedSnap)) {
       return (
         <p className="text-sm text-zinc-500">
           <Spinner className="mr-2" />
@@ -376,9 +388,13 @@ function App() {
       );
     }
     if (!selectedSnap) {
-      return (
-        <p className="text-sm text-zinc-500">{t("folders.noSnapshots")}</p>
-      );
+      // Distinguish "this file has snapshots, just pick one" from the genuine
+      // empty case. snaps.length is the source of truth here.
+      const message =
+        snaps.length === 0
+          ? t("folders.noSnapshots")
+          : t("folders.pickSnapshot");
+      return <p className="text-sm text-zinc-500">{message}</p>;
     }
     const left = bytesToUtf8(leftBytes);
     const right = bytesToUtf8(rightBytes);
@@ -566,15 +582,25 @@ function DocxDiff({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const lb = Uint8Array.from(left);
-      const rb = Uint8Array.from(right);
-      const lbuf = lb.buffer.slice(lb.byteOffset, lb.byteOffset + lb.byteLength);
-      const rbuf = rb.buffer.slice(rb.byteOffset, rb.byteOffset + rb.byteLength);
-      const l = await mammoth.extractRawText({ arrayBuffer: lbuf });
-      const r = await mammoth.extractRawText({ arrayBuffer: rbuf });
+      // Mammoth crashes with "End of data reached / Corrupted zip ?" on empty
+      // input (which happens for tombstoned snapshots when the right side is a
+      // missing file). Skip the parse and treat empty as empty text.
+      const extract = async (bytes: number[]): Promise<string> => {
+        if (bytes.length === 0) return "";
+        const u8 = Uint8Array.from(bytes);
+        const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+        try {
+          const r = await mammoth.extractRawText({ arrayBuffer: buf });
+          return r.value;
+        } catch (e) {
+          console.warn("[DocxDiff] mammoth parse failed", e);
+          return "";
+        }
+      };
+      const [l, r] = await Promise.all([extract(left), extract(right)]);
       if (!cancelled) {
-        setA(l.value);
-        setB(r.value);
+        setA(l);
+        setB(r);
       }
     })();
     return () => {
@@ -618,31 +644,50 @@ function Wizard({
   }, [i18n]);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<string | null>(null);
-  const [preset, setPreset] = useState<PresetKey>("word");
+  const [selectedPresets, setSelectedPresets] = useState<Set<PresetKey>>(
+    () => new Set<PresetKey>(["word"]),
+  );
+  const [customEnabled, setCustomEnabled] = useState(false);
   const [customExt, setCustomExt] = useState("");
   const [startAtLogin, setStartAtLogin] = useState(cfg.startAtLogin);
   const [busy, setBusy] = useState(false);
 
-  const total = 4;
+  const total = 5; // language, welcome, pickFolder, extensions, confirm
 
-  const currentExtensions = useMemo<string[]>(() => {
-    if (preset === "custom") {
-      return customExt
+  const customExtensions = useMemo<string[]>(
+    () =>
+      customExt
         .split(",")
         .map((s) => s.trim().replace(/^\./, "").toLowerCase())
-        .filter(Boolean);
+        .filter(Boolean),
+    [customExt],
+  );
+
+  const currentExtensions = useMemo<string[]>(() => {
+    const out = new Set<string>();
+    for (const k of selectedPresets) {
+      for (const e of PRESETS[k]) out.add(e);
     }
-    return [...PRESETS[preset]];
-  }, [preset, customExt]);
+    if (customEnabled) {
+      for (const e of customExtensions) out.add(e);
+    }
+    return [...out];
+  }, [selectedPresets, customEnabled, customExtensions]);
+
+  const togglePreset = (k: PresetKey) => {
+    setSelectedPresets((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
 
   const canNext = useMemo(() => {
-    if (step === 1) return !!dir;
-    if (step === 2) {
-      if (preset === "custom") return currentExtensions.length > 0;
-      return true;
-    }
+    if (step === 2) return !!dir;
+    if (step === 3) return currentExtensions.length > 0;
     return true;
-  }, [step, dir, preset, currentExtensions]);
+  }, [step, dir, currentExtensions]);
 
   const finish = async () => {
     if (!dir) return;
@@ -690,7 +735,7 @@ function Wizard({
             {t("wizard.step", { n: step + 1, total })}
           </span>
         </div>
-        {step < total - 1 && (
+        {step > 0 && step < total - 1 && (
           <button
             type="button"
             onClick={() => setStep(total - 1)}
@@ -703,6 +748,43 @@ function Wizard({
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 p-10">
         {step === 0 && (
           <section className="space-y-4">
+            <h2 className="text-xl font-semibold text-white">
+              {t("wizard.language.title")}
+            </h2>
+            <p className="text-sm leading-relaxed text-zinc-300">
+              {t("wizard.language.body")}
+            </p>
+            <div className="space-y-2">
+              {(["en", "pt-BR"] as const).map((lng) => {
+                const active = normalizeUiLang(i18n.language) === lng;
+                return (
+                  <label
+                    key={lng}
+                    className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
+                      active
+                        ? "border-emerald-500 bg-emerald-950/20"
+                        : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="wizard-lang"
+                      checked={active}
+                      onChange={() => void i18n.changeLanguage(lng)}
+                    />
+                    <span className="text-sm font-medium text-zinc-100">
+                      {lng === "en"
+                        ? t("settings.languageEnglish")
+                        : t("settings.languagePortuguese")}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+        )}
+        {step === 1 && (
+          <section className="space-y-4">
             <h1 className="text-2xl font-semibold leading-tight text-white">
               {t("wizard.welcome.title")}
             </h1>
@@ -711,7 +793,7 @@ function Wizard({
             </p>
           </section>
         )}
-        {step === 1 && (
+        {step === 2 && (
           <section className="space-y-4">
             <h2 className="text-xl font-semibold text-white">
               {t("wizard.pickFolder.title")}
@@ -744,7 +826,7 @@ function Wizard({
             </div>
           </section>
         )}
-        {step === 2 && (
+        {step === 3 && (
           <section className="space-y-4">
             <h2 className="text-xl font-semibold text-white">
               {t("wizard.extensions.title")}
@@ -753,45 +835,76 @@ function Wizard({
               {t("wizard.extensions.body")}
             </p>
             <div className="space-y-2">
-              {(["word", "markdown", "code", "custom"] as const).map((k) => (
-                <label
-                  key={k}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                    preset === k
-                      ? "border-emerald-500 bg-emerald-950/20"
-                      : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="preset"
-                    className="mt-1"
-                    checked={preset === k}
-                    onChange={() => setPreset(k)}
-                  />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium text-zinc-100">
-                      {t(`wizard.extensions.preset.${k}`)}
+              {(["word", "markdown", "code"] as const).map((k) => {
+                const active = selectedPresets.has(k);
+                return (
+                  <label
+                    key={k}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                      active
+                        ? "border-emerald-500 bg-emerald-950/20"
+                        : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={active}
+                      onChange={() => togglePreset(k)}
+                    />
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-zinc-100">
+                        {t(`wizard.extensions.preset.${k}`)}
+                      </div>
+                      <div className="text-xs text-zinc-500">
+                        {t(`wizard.extensions.preset.${k}Hint`)}
+                      </div>
                     </div>
-                    <div className="text-xs text-zinc-500">
-                      {t(`wizard.extensions.preset.${k}Hint`)}
-                    </div>
-                    {k === "custom" && preset === "custom" && (
-                      <input
-                        autoFocus
-                        className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
-                        placeholder={t("wizard.extensions.preset.customPlaceholder")}
-                        value={customExt}
-                        onChange={(e) => setCustomExt(e.target.value)}
-                      />
-                    )}
+                  </label>
+                );
+              })}
+              <label
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                  customEnabled
+                    ? "border-emerald-500 bg-emerald-950/20"
+                    : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={customEnabled}
+                  onChange={(e) => setCustomEnabled(e.target.checked)}
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-zinc-100">
+                    {t("wizard.extensions.preset.custom")}
                   </div>
-                </label>
-              ))}
+                  <div className="text-xs text-zinc-500">
+                    {t("wizard.extensions.preset.customHint")}
+                  </div>
+                  {customEnabled && (
+                    <input
+                      autoFocus
+                      className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
+                      placeholder={t("wizard.extensions.preset.customPlaceholder")}
+                      value={customExt}
+                      onChange={(e) => setCustomExt(e.target.value)}
+                    />
+                  )}
+                </div>
+              </label>
             </div>
+            <p className="text-xs text-zinc-500">
+              {currentExtensions.length === 0
+                ? t("wizard.extensions.noneSelected")
+                : t("wizard.extensions.summary", {
+                    count: currentExtensions.length,
+                  })}
+            </p>
           </section>
         )}
-        {step === 3 && (
+        {step === 4 && (
           <section className="space-y-4">
             <h2 className="text-xl font-semibold text-white">
               {t("wizard.confirm.title")}
@@ -833,7 +946,7 @@ function Wizard({
             disabled={!canNext}
             onClick={() => setStep((s) => Math.min(total - 1, s + 1))}
           >
-            {step === 0 ? t("wizard.welcome.next") : t("common.next")}
+            {step === 1 ? t("wizard.welcome.next") : t("common.next")}
           </Button>
         ) : (
           <Button
@@ -1403,6 +1516,29 @@ function SettingsPane({
           value={extInput}
           onChange={(e) => setExtInput(e.target.value)}
         />
+      </div>
+
+      <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
+        <h3 className="text-sm font-medium text-zinc-300">
+          {t("settings.startup")}
+        </h3>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-200">
+          <input
+            type="checkbox"
+            checked={cfg.startAtLogin}
+            onChange={(e) => {
+              void setConfig({ ...cfg, startAtLogin: e.target.checked })
+                .then(() => onReload())
+                .catch((err) => {
+                  alert(String(err));
+                });
+            }}
+          />
+          {t("settings.startAtLogin")}
+        </label>
+        <p className="text-xs leading-relaxed text-zinc-500">
+          {t("settings.startAtLoginHint")}
+        </p>
       </div>
 
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">

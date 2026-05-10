@@ -21,6 +21,10 @@
   },
   "wizard": {
     "step": "Step {{n}} of {{total}}",
+    "language": {
+      "title": "Choose your language",
+      "body": "You can change this anytime from Settings."
+    },
     "welcome": {
       "title": "AutoVersion keeps a history of every save, so nothing ever gets lost.",
       "body": "AutoVersion runs quietly in your menu bar and takes a snapshot every time you save a file in the folders you protect. You can browse old versions, see exactly what changed, and roll any file back with one click.",
@@ -34,7 +38,10 @@
     },
     "extensions": {
       "title": "Which kinds of files should AutoVersion track?",
-      "body": "Pick a preset or define your own list. AutoVersion ignores everything else in the folder.",
+      "body": "Pick one or more presets, and add your own extensions if needed. AutoVersion ignores everything else in the folder.",
+      "noneSelected": "Select at least one preset, or add custom extensions.",
+      "summary_one": "1 extension selected",
+      "summary_other": "{{count}} extensions selected",
       "preset": {
         "word": "Word documents (.docx)",
         "wordHint": "Best for writers using Microsoft Word.",
@@ -58,6 +65,7 @@
     "emptyFolder": "Pick a folder to see its files.",
     "noFiles": "No saves yet — edit a file in this folder to create the first snapshot.",
     "noSnapshots": "No snapshots yet for this file.",
+    "pickSnapshot": "Pick a snapshot above to see what changed.",
     "pickFile": "Pick a file to see its history.",
     "noDifferences": "No differences between these two versions.",
     "loadingHistory": "Loading history…",
@@ -119,6 +127,9 @@
     "preview": "Preview matches",
     "previewResult": "{{matched}} matched, {{ignored}} ignored",
     "reveal": "Reveal in Finder",
+    "startup": "Startup",
+    "startAtLogin": "Start AutoVersion automatically when I log in",
+    "startAtLoginHint": "macOS may show a banner titled “App Background Activity” (not “login”)—that is normal for a LaunchAgent. The app appears under System Settings → General → Login Items & Extensions (wording varies by macOS version). The notification may use the binary name (e.g. “autoversion”) instead of “AutoVersion”.",
     "watching": "Watching",
     "watcherStatus": "Watcher: {{status}}",
     "statusRunning": "Running",

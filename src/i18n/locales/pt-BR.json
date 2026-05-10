@@ -21,6 +21,10 @@
   },
   "wizard": {
     "step": "Etapa {{n}} de {{total}}",
+    "language": {
+      "title": "Escolha o idioma",
+      "body": "Você pode mudar isso a qualquer momento em Ajustes."
+    },
     "welcome": {
       "title": "O AutoVersion guarda o histórico de cada save, então nada se perde.",
       "body": "O AutoVersion roda discretamente na sua barra de menus e registra um snapshot toda vez que você salva um arquivo dentro das pastas protegidas. Você pode abrir versões antigas, ver o que mudou e voltar qualquer arquivo a um estado anterior com um clique.",
@@ -34,7 +38,10 @@
     },
     "extensions": {
       "title": "Quais tipos de arquivo o AutoVersion deve acompanhar?",
-      "body": "Escolha um preset ou defina sua própria lista. Tudo que estiver fora dela é ignorado.",
+      "body": "Escolha um ou mais presets e adicione extensões personalizadas se quiser. Tudo o que estiver fora da lista é ignorado.",
+      "noneSelected": "Selecione ao menos um preset ou adicione extensões personalizadas.",
+      "summary_one": "1 extensão selecionada",
+      "summary_other": "{{count}} extensões selecionadas",
       "preset": {
         "word": "Documentos do Word (.docx)",
         "wordHint": "Ideal para quem escreve no Microsoft Word.",
@@ -58,6 +65,7 @@
     "emptyFolder": "Escolha uma pasta para ver seus arquivos.",
     "noFiles": "Nada salvo ainda — edite um arquivo nesta pasta para criar o primeiro snapshot.",
     "noSnapshots": "Ainda não há snapshots desse arquivo.",
+    "pickSnapshot": "Escolha um snapshot acima para ver o que mudou.",
     "pickFile": "Escolha um arquivo para ver seu histórico.",
     "noDifferences": "Não há diferenças entre essas duas versões.",
     "loadingHistory": "Carregando histórico…",
@@ -119,6 +127,9 @@
     "preview": "Pré-visualizar correspondências",
     "previewResult": "{{matched}} correspondências, {{ignored}} ignoradas",
     "reveal": "Mostrar no Finder",
+    "startup": "Inicialização",
+    "startAtLogin": "Iniciar o AutoVersion automaticamente quando eu fizer login",
+    "startAtLoginHint": "O macOS pode mostrar um aviso “Atividade em segundo plano do app” (e não “login”) — isso é normal para um LaunchAgent. O app aparece em Ajustes do Sistema → Geral → Itens de início e extensões (o texto varia conforme a versão do macOS). A notificação pode usar o nome do binário (ex.: “autoversion”) em vez de “AutoVersion”.",
     "watching": "Observando",
     "watcherStatus": "Watcher: {{status}}",
     "statusRunning": "Em execução",

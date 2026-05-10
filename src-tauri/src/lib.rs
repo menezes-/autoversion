@@ -1,5 +1,6 @@
 //! AutoVersion Tauri shell: menu-bar accessory, tray, plugins.
 
+mod autostart;
 mod commands;
 mod config;
 mod error;
@@ -22,6 +23,7 @@ use tauri::{
 };
 use tracing::error;
 
+use crate::autostart::reconcile_autostart;
 use crate::config::Config;
 
 /// Notify the background watcher thread to rebuild watches from `Arc<Mutex<Config>>`.
@@ -160,6 +162,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Detect first launch BEFORE we materialise a default config: if
+            // there is no config file on disk yet, we want to surface the
+            // window so the user sees the wizard instead of a silent menubar.
+            let first_launch = match config::config_file_path() {
+                Ok(p) => !p.exists(),
+                Err(_) => true,
+            };
             let initial_config = match config::load_config_from_disk() {
                 Ok(c) => c,
                 Err(e) => {
@@ -167,8 +176,14 @@ pub fn run() {
                     Config::default()
                 }
             };
+            let needs_onboarding = first_launch || initial_config.watched_folders.is_empty();
+            let start_at_login = initial_config.start_at_login;
             let shared_config = Arc::new(Mutex::new(initial_config));
             app.manage(shared_config.clone());
+
+            if let Err(e) = reconcile_autostart(app.handle().clone(), start_at_login) {
+                tracing::warn!("autostart reconcile on launch: {e}");
+            }
 
             let (watcher_tx, watcher_rx) = mpsc::channel::<()>();
             app.manage(WatcherTx(watcher_tx.clone()));
@@ -194,6 +209,15 @@ pub fn run() {
                         }
                     }
                 });
+
+                if needs_onboarding {
+                    if let Err(e) = win.show() {
+                        tracing::warn!("first-launch window show: {e}");
+                    }
+                    if let Err(e) = win.set_focus() {
+                        tracing::warn!("first-launch window focus: {e}");
+                    }
+                }
             }
 
             Ok(())

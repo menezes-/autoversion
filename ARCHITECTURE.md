@@ -207,7 +207,7 @@ The watcher's actual ignore filter for a folder is `universal_patterns ∪ forma
 ```rust
 // Config
 get_config() -> Config
-set_config(config: Config) -> ()
+set_config(config: Config) -> ()  // persists disk + in-memory; syncs start_at_login to OS via tauri-plugin-autostart (LaunchAgent on macOS)
 add_watched_folder(path: String, extensions: Vec<String>) -> WatchedFolder
 update_watched_folder(id: String, patch: WatchedFolderPatch) -> WatchedFolder
 remove_watched_folder(id: String) -> ()

@@ -13,6 +13,8 @@ pub enum AppError {
     NotFound(String),
     #[error("invalid argument: {0}")]
     BadRequest(String),
+    #[error("autostart: {0}")]
+    Autostart(String),
 }
 
 impl serde::Serialize for AppError {
@@ -34,6 +36,7 @@ impl AppError {
             AppError::Config(_) => "config",
             AppError::NotFound(_) => "not_found",
             AppError::BadRequest(_) => "bad_request",
+            AppError::Autostart(_) => "autostart",
         }
     }
 }
