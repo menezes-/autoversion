@@ -340,11 +340,11 @@ These are the things that will bite you if not handled. Several are format-speci
 
 ## Distribution
 
-Personal-use tool, no App Store, no signing.
+Personal-use tool, no App Store, no paid signing certificate. Release bundles use **ad-hoc code signing** (`signingIdentity: "-"`) so Gatekeeper on Apple Silicon does not falsely report the app as “damaged.”
 
 - `pnpm tauri build` produces a `.app` and `.dmg` in `src-tauri/target/release/bundle/`.
 - Install by dragging the `.app` to `/Applications`, or just run from anywhere.
-- First launch will be blocked by macOS Gatekeeper. Bypass with right-click → Open, or `xattr -cr /Applications/AutoVersion.app` in Terminal.
+- First launch: Gatekeeper treats the app as from an unidentified developer — use right-click → Open. If a browser added quarantine and the app still refuses to open, run `xattr -cr /Applications/AutoVersion.app` in Terminal.
 - No auto-update mechanism. New versions = rebuild and reinstall manually.
 
 This is a deliberate tradeoff: zero ongoing cost and zero account setup, in exchange for a one-time "right-click to open" step on install.

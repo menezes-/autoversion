@@ -160,7 +160,7 @@ Add each permission string to `src-tauri/capabilities/default.json` for the wind
 
 Grant only what the window uses. Regenerate schema if needed: `pnpm tauri permission add <plugin>:default`.
 
-Personal use, unsigned. `pnpm tauri build` produces `.app` and `.dmg`. In `tauri.conf.json`, leave `bundle.macOS.signingIdentity` null and don't add a `bundle.updater` block. First-launch Gatekeeper bypass: right-click → Open, or `xattr -cr /Applications/AutoVersion.app`. Document both in the README for the end user.
+Personal use, no Apple Developer ID. `pnpm tauri build` produces `.app` and `.dmg`. In `tauri.conf.json`, set `bundle.macOS.signingIdentity` to `"-"` (ad-hoc code signing) so Apple Silicon Gatekeeper does not show the misleading “app is damaged” dialog for an actually valid bundle; do not add a `bundle.updater` block. First launch: right-click → Open; if the download was quarantined, `xattr -cr /Applications/AutoVersion.app`. Document both in the README for the end user.
 
 `git2`: always use the `vendored-libgit2` feature so the binary is self-contained (no system `git`).
 
@@ -203,4 +203,4 @@ Don't upgrade Tauri mid-project unless fixing a specific bug.
 
 ## Distribution
 
-Personal use, unsigned. `pnpm tauri build` produces `.app` and `.dmg`. In `tauri.conf.json`, leave `bundle.macOS.signingIdentity` null and don't add a `bundle.updater` block. First-launch Gatekeeper bypass: right-click → Open, or `xattr -cr /Applications/AutoVersion.app`. Document both in the README for the end user.
+Personal use, no Apple Developer ID. `pnpm tauri build` produces `.app` and `.dmg`. In `tauri.conf.json`, set `bundle.macOS.signingIdentity` to `"-"` (ad-hoc code signing) so Apple Silicon Gatekeeper does not show the misleading “app is damaged” dialog for an actually valid bundle; do not add a `bundle.updater` block. First launch: right-click → Open; if the download was quarantined, `xattr -cr /Applications/AutoVersion.app`. Document both in the README for the end user.

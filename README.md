@@ -28,11 +28,13 @@ pnpm tauri build
 
 Outputs `.app` and `.dmg` in `src-tauri/target/release/bundle/`. Drag the `.app` to `/Applications`.
 
-The app is **unsigned** (`signingIdentity: null` in [`tauri.conf.json`](src-tauri/tauri.conf.json)) — empirically this is friendlier than ad-hoc signing on current macOS, which can produce a "damaged" Gatekeeper prompt. On first launch:
+The macOS bundle is **ad-hoc code-signed** (`signingIdentity: "-"` in [`tauri.conf.json`](src-tauri/tauri.conf.json)) — no Apple Developer certificate, but every binary in the `.app` gets a valid ad-hoc signature. On **Apple Silicon**, skipping this and leaving the bundle completely unsigned often makes Gatekeeper show a misleading **“AutoVersion.app is damaged and can’t be opened”** message (it is not actually corrupted). Ad-hoc signing avoids that; you still get an **unidentified developer** flow, not App Store trust.
 
-- Right-click the app → **Open** → Open again. macOS remembers your choice.
+**First launch**
 
-If you do see "damaged and can't be opened", remove the quarantine flag manually:
+- Right-click the app → **Open** → confirm **Open**. macOS remembers your choice for later double-clicks.
+
+**If the browser quarantined the download** (stuck on “damaged” even after reinstalling), strip the quarantine attribute:
 
 ```bash
 xattr -cr /Applications/AutoVersion.app

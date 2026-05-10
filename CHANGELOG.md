@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] — 2026-05-10
+
+### Distribution
+
+- **Ad-hoc code signing restored** (`bundle.macOS.signingIdentity: "-"`). v0.4.0 release builds used `null`, which on Apple Silicon often triggers Gatekeeper’s misleading **“AutoVersion.app is damaged and can’t be opened”** instead of the normal unidentified-developer flow. README, `AGENTS.md`, and `ARCHITECTURE.md` now describe ad-hoc signing and quarantine (`xattr`) correctly.
+
 ## [0.4.0] — 2026-05-10
 
 ### Settings & storage
