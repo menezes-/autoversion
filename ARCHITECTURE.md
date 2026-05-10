@@ -322,22 +322,6 @@ These are the things that will bite you if not handled. Several are format-speci
 
 11. **App not running = no protection.** Make this obvious. The menu bar icon should change state if the watcher is paused or has errored. "Start at login" should default to ON during onboarding.
 
-## Recommended Build Order
-
-1. Tauri scaffold with menu bar icon, hidden main window, `ActivationPolicy::Accessory`.
-2. Config storage (load/save to JSON), basic IPC commands for `get_config` / `set_config` / `add_watched_folder` / `remove_watched_folder`.
-3. The format registry (Rust + TS), with built-in handlers for docx, markdown, plain text, and source code. Just data and lookup functions, no behavior wired up yet.
-4. File watcher + debouncer + ignore-pattern filter (uses the registry from step 3, plus user patterns from config). Log events to console — verify the right events fire for Word, vim, VS Code saves.
-5. Git-based snapshot store. Verify snapshots accumulate and dedup by hash.
-6. Onboarding screen — folder picker + extension presets + start-at-login toggle.
-7. Settings page — folder list, add/remove folders, per-folder extension and user ignore-pattern editor with live preview.
-8. History view — file list pane + snapshot timeline. No diffing yet.
-9. Diff viewer dispatcher: hook up `Text` and `OpaqueBinary` renderers. Most file types now show sensible diffs.
-10. `Docx` renderer (mammoth + word-level diff).
-11. Restore flow with confirmation modal.
-12. Live updates (event listeners), menu bar icon state changes, pause/resume.
-13. Polish, packaging (`pnpm tauri build`).
-
 ## Distribution
 
 Personal-use tool, no App Store, no paid signing certificate. Release bundles use **ad-hoc code signing** (`signingIdentity: "-"`) so Gatekeeper on Apple Silicon does not falsely report the app as “damaged.”
