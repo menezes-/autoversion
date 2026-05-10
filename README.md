@@ -28,11 +28,11 @@ pnpm tauri build
 
 Outputs `.app` and `.dmg` in `src-tauri/target/release/bundle/`. Drag the `.app` to `/Applications`.
 
-The app is **ad-hoc code-signed** (`signingIdentity: "-"` in [`tauri.conf.json`](src-tauri/tauri.conf.json)), so Gatekeeper shows the friendly "unknown developer" prompt instead of "AutoVersion.app is damaged". On first launch:
+The app is **unsigned** (`signingIdentity: null` in [`tauri.conf.json`](src-tauri/tauri.conf.json)) — empirically this is friendlier than ad-hoc signing on current macOS, which can produce a "damaged" Gatekeeper prompt. On first launch:
 
 - Right-click the app → **Open** → Open again. macOS remembers your choice.
 
-If you ever see "damaged and can't be opened" anyway (older builds, or if something went wrong with quarantine), remove the quarantine flag manually:
+If you do see "damaged and can't be opened", remove the quarantine flag manually:
 
 ```bash
 xattr -cr /Applications/AutoVersion.app
