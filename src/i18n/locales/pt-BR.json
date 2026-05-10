@@ -49,6 +49,8 @@
         "markdownHint": ".md, .markdown, .txt",
         "code": "Código",
         "codeHint": "Linguagens comuns: .py, .ts, .rs, .js, .go, .java, …",
+        "pdf": "Documentos PDF (.pdf)",
+        "pdfHint": "Artigos e digitalizações; snapshots são guardados, o diff é só metadados.",
         "custom": "Personalizado",
         "customHint": "Lista separada por vírgulas, sem pontos.",
         "customPlaceholder": "ex.: docx, md, tex"
@@ -123,6 +125,27 @@
     "enabled": "Ativada",
     "add": "Adicionar pasta",
     "addHint": "Extensões para a nova pasta (separadas por vírgula)",
+    "addFolderModal": {
+      "title": "Adicionar pasta observada"
+    },
+    "snapshotLocation": "Armazenamento de snapshots desta pasta",
+    "snapshotLocationDefault": "Local padrão dos snapshots",
+    "changeLocation": "Alterar local dos snapshots…",
+    "resetLocation": "Voltar ao padrão",
+    "revealSnapshotRoot": "Mostrar pasta de snapshots no Finder",
+    "moveDialog": {
+      "title": "Mover snapshots existentes?",
+      "body": "Você mudou onde os snapshots são guardados. Mover os dados já existentes para o novo local para manter o histórico?",
+      "dontMoveWarning": "Não mover: o app passa a usar o novo local, mas os dados antigos ficam no disco onde estavam (você pode apagar manualmente no Finder).",
+      "move": "Mover snapshots",
+      "dontMove": "Não mover"
+    },
+    "removeDialog": {
+      "title": "Remover pasta observada",
+      "body": "Parar de observar {{path}}? Você também pode apagar todos os snapshots guardados desta pasta.",
+      "removeOnly": "Só remover",
+      "removeAndDelete": "Remover e apagar snapshots"
+    },
     "remove": "Remover",
     "preview": "Pré-visualizar correspondências",
     "previewResult": "{{matched}} correspondências, {{ignored}} ignoradas",
@@ -138,7 +161,6 @@
     "resume": "Retomar",
     "storage": "Armazenamento",
     "totalStorage": "Armazenamento total dos snapshots: {{n}}",
-    "retention": "Aplicar retenção agora (sem efeito na v1)",
     "language": "Idioma",
     "languageEnglish": "English",
     "languagePortuguese": "Português (Brasil)"
@@ -188,7 +210,7 @@
       "configTitle": "Configurações",
       "config": "Em ~/Library/Application Support/AutoVersion/config.json — um único arquivo JSON com as pastas observadas e suas preferências.",
       "snapshotsTitle": "Snapshots",
-      "snapshots": "Cada pasta observada tem seu próprio repositório em ~/Library/Application Support/AutoVersion/repos/<folder-id>/.",
+      "snapshots": "Cada pasta observada tem seu próprio repositório em `<pai>/<id-da-pasta>/`. O padrão é ~/Library/Application Support/AutoVersion/repos; dá para mudar o padrão global ou por pasta em Ajustes.",
       "logsTitle": "Logs",
       "logs": "Os logs de diagnóstico ficam em ~/Library/Logs/AutoVersion/autoversion.log. Útil quando precisar reportar um bug.",
       "nukeTitle": "Apagando todos os dados do AutoVersion",
@@ -206,7 +228,7 @@
   },
   "about": {
     "title": "Sobre",
-    "description": "O AutoVersion mantém snapshots automáticos dos arquivos das pastas que você escolher. Os snapshots ficam em ~/Library/Application Support/AutoVersion/repos/.",
+    "description": "O AutoVersion mantém snapshots automáticos dos arquivos das pastas que você escolher. Por padrão ficam em ~/Library/Application Support/AutoVersion/repos/; dá para mudar em Ajustes.",
     "gatekeeper": "Build macOS sem assinatura: na primeira execução, clique com o botão direito → Abrir, ou rode xattr -cr /Applications/AutoVersion.app."
   }
 }

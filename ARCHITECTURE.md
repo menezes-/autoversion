@@ -58,10 +58,14 @@ Three components in a single Tauri app:
 For each watched folder, AutoVersion maintains a parallel git repository at:
 
 ```
-~/Library/Application Support/AutoVersion/repos/<folder-hash>/
+<snapshot-parent>/<folder-id>/
 ```
 
-where `<folder-hash>` is a hash of the absolute folder path (so we can map back).
+where `<folder-id>` is a stable hash of the absolute **watched** folder path, and `<snapshot-parent>` resolves in order:
+
+1. Per-folder `snapshotRootOverride` in config (if set), else  
+2. Global `defaultSnapshotRoot` in config (if set), else  
+3. Built-in default `~/Library/Application Support/AutoVersion/repos`
 
 **Why a separate repo, not a `.git` inside the watched folder:**
 - The user doesn't see or interact with git.
@@ -145,8 +149,8 @@ Accessed from the sidebar. Sections:
 **(c) Global settings**
 - Start at login (toggle).
 - Retention policy (dropdown: *Keep everything* / *Thin after 30 days* / *Thin after 7 days* / *Custom…*).
-- Storage location (read-only, with "Reveal in Finder" button).
-- Storage used (auto-calculated, e.g. "147 MB across 3 folders") with a "Clean up" button that runs the retention thinner immediately.
+- Snapshot storage: global default parent directory and per-folder overrides (with optional move of existing repos, and "Reveal in Finder").
+- Storage used (auto-calculated, e.g. "147 MB across 3 folders").
 
 **(d) Pause / resume watching** — a global toggle, also accessible from the menu bar right-click. When paused, the menu bar icon dims and the watcher does nothing. State persists across restarts.
 
@@ -191,6 +195,7 @@ struct Config {
     watched_folders: Vec<WatchedFolder>,
     start_at_login: bool,
     retention_policy: RetentionPolicy,
+    default_snapshot_root: Option<PathBuf>, // parent dir for repos without per-folder override
 }
 
 struct WatchedFolder {
@@ -199,6 +204,7 @@ struct WatchedFolder {
     extensions: Vec<String>,    // e.g. ["docx", "md"]; empty means "everything"
     user_ignore_patterns: Vec<String>,  // user-defined globs (in addition to built-in)
     enabled: bool,
+    snapshot_root_override: Option<PathBuf>, // parent dir for this folder’s `<id>/` repo
 }
 ```
 
@@ -211,6 +217,10 @@ set_config(config: Config) -> ()  // persists disk + in-memory; syncs start_at_l
 add_watched_folder(path: String, extensions: Vec<String>) -> WatchedFolder
 update_watched_folder(id: String, patch: WatchedFolderPatch) -> WatchedFolder
 remove_watched_folder(id: String) -> ()
+get_system_snapshot_parent() -> String   // built-in default repos parent (canonical)
+set_default_snapshot_root(new_root: Option<String>, move_existing: bool) -> ()
+set_folder_snapshot_root(folder_id: String, new_root: Option<String>, move_existing: bool) -> WatchedFolder
+delete_folder_snapshots(folder_id: String) -> ()   // removes `<parent>/<id>/` for that folder only
 
 // Pattern preview (for the settings UI's "live preview")
 preview_folder_matches(id: String) -> FolderMatchPreview
@@ -231,7 +241,6 @@ resume_watching() -> ()
 // Status
 get_status() -> Status  // last snapshot time per folder, watcher health, paused state
 get_storage_usage() -> StorageUsage  // bytes per folder + total
-run_retention_now() -> ()  // manual cleanup trigger
 ```
 
 Events emitted from backend → frontend:

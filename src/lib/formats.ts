@@ -72,6 +72,11 @@ export const FORMAT_HANDLERS: FormatEntry[] = [
     displayName: "Source code",
   },
   {
+    extensions: ["pdf"],
+    diffKind: "opaqueBinary",
+    displayName: "PDF",
+  },
+  {
     extensions: [],
     diffKind: "opaqueBinary",
     displayName: "Other",

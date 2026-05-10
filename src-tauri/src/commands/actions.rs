@@ -30,15 +30,17 @@ pub async fn restore_snapshot(
     commit_sha: String,
     relative_path: String,
 ) -> Result<(), AppError> {
-    let folder = {
+    let (folder, repo_path, cfg_snap) = {
         let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-        folder_by_id(&cfg, &folder_id)?.clone()
+        let folder = folder_by_id(&cfg, &folder_id)?.clone();
+        let repo_path = storage::resolve_repo_path(&cfg, &folder)?;
+        (folder, repo_path, cfg.clone())
     };
 
     let abs = folder.path.join(&relative_path);
-    let _ = storage::snapshot_current_if_exists(&app, &folder, &abs)?;
+    let _ = storage::snapshot_current_if_exists(&app, &cfg_snap, &folder, &abs)?;
 
-    let bytes = storage::read_blob_at_commit(&folder_id, &commit_sha, &relative_path)?;
+    let bytes = storage::read_blob_at_commit(&repo_path, &commit_sha, &relative_path)?;
     storage::write_bytes_to_disk(&abs, &bytes)?;
 
     let _ = app.emit(
@@ -59,12 +61,13 @@ pub async fn trigger_manual_snapshot(
     folder_id: String,
     relative_path: String,
 ) -> Result<(), AppError> {
-    let folder = {
+    let (folder, cfg_snap) = {
         let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-        folder_by_id(&cfg, &folder_id)?.clone()
+        let folder = folder_by_id(&cfg, &folder_id)?.clone();
+        (folder, cfg.clone())
     };
     let abs = folder.path.join(&relative_path);
-    let _ = storage::snapshot_watched_file(&app, &folder, &abs)?;
+    let _ = storage::snapshot_watched_file(&app, &cfg_snap, &folder, &abs)?;
     Ok(())
 }
 

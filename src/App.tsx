@@ -19,6 +19,13 @@ import {
 import { enUS, ptBR } from "date-fns/locale";
 import type { Locale } from "date-fns";
 import mammoth from "mammoth";
+import { AddFolderModal } from "@/components/AddFolderModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import {
+  deriveExtensions,
+  ExtensionPicker,
+  type PresetKey,
+} from "@/components/ExtensionPicker";
 import { TwoPaneLineDiff } from "@/components/TwoPaneLineDiff";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,12 +49,15 @@ import {
   openWatchedFile,
   pauseWatching,
   previewFolderMatches,
+  deleteFolderSnapshots,
+  getSystemSnapshotParent,
   removeWatchedFolder,
   restoreSnapshot,
   resumeWatching,
   revealPath,
-  runRetentionNow,
   setConfig,
+  setDefaultSnapshotRoot,
+  setFolderSnapshotRoot,
   updateWatchedFolder,
   type ActivityEntry,
   type Config,
@@ -57,47 +67,6 @@ import {
 
 type Nav = "folders" | "activity" | "settings" | "help" | "about";
 type CompareMode = "previous" | "current" | "pick";
-
-const PRESETS = {
-  word: ["docx"],
-  markdown: ["md", "markdown", "txt"],
-  code: [
-    "py",
-    "js",
-    "mjs",
-    "cjs",
-    "ts",
-    "tsx",
-    "jsx",
-    "rs",
-    "go",
-    "java",
-    "c",
-    "cc",
-    "cpp",
-    "cxx",
-    "h",
-    "hh",
-    "hpp",
-    "rb",
-    "cs",
-    "kt",
-    "swift",
-    "php",
-    "scala",
-    "sh",
-    "bash",
-    "zsh",
-    "fish",
-    "sql",
-    "r",
-    "lua",
-    "vim",
-    "el",
-  ],
-} as const;
-
-type PresetKey = "word" | "markdown" | "code";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -663,25 +632,10 @@ function Wizard({
     [customExt],
   );
 
-  const currentExtensions = useMemo<string[]>(() => {
-    const out = new Set<string>();
-    for (const k of selectedPresets) {
-      for (const e of PRESETS[k]) out.add(e);
-    }
-    if (customEnabled) {
-      for (const e of customExtensions) out.add(e);
-    }
-    return [...out];
-  }, [selectedPresets, customEnabled, customExtensions]);
-
-  const togglePreset = (k: PresetKey) => {
-    setSelectedPresets((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-  };
+  const currentExtensions = useMemo<string[]>(
+    () => deriveExtensions(selectedPresets, customEnabled, customExtensions),
+    [selectedPresets, customEnabled, customExtensions],
+  );
 
   const canNext = useMemo(() => {
     if (step === 2) return !!dir;
@@ -834,74 +788,14 @@ function Wizard({
             <p className="text-sm leading-relaxed text-zinc-300">
               {t("wizard.extensions.body")}
             </p>
-            <div className="space-y-2">
-              {(["word", "markdown", "code"] as const).map((k) => {
-                const active = selectedPresets.has(k);
-                return (
-                  <label
-                    key={k}
-                    className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                      active
-                        ? "border-emerald-500 bg-emerald-950/20"
-                        : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={active}
-                      onChange={() => togglePreset(k)}
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium text-zinc-100">
-                        {t(`wizard.extensions.preset.${k}`)}
-                      </div>
-                      <div className="text-xs text-zinc-500">
-                        {t(`wizard.extensions.preset.${k}Hint`)}
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                  customEnabled
-                    ? "border-emerald-500 bg-emerald-950/20"
-                    : "border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900/70"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={customEnabled}
-                  onChange={(e) => setCustomEnabled(e.target.checked)}
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-zinc-100">
-                    {t("wizard.extensions.preset.custom")}
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    {t("wizard.extensions.preset.customHint")}
-                  </div>
-                  {customEnabled && (
-                    <input
-                      autoFocus
-                      className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100"
-                      placeholder={t("wizard.extensions.preset.customPlaceholder")}
-                      value={customExt}
-                      onChange={(e) => setCustomExt(e.target.value)}
-                    />
-                  )}
-                </div>
-              </label>
-            </div>
-            <p className="text-xs text-zinc-500">
-              {currentExtensions.length === 0
-                ? t("wizard.extensions.noneSelected")
-                : t("wizard.extensions.summary", {
-                    count: currentExtensions.length,
-                  })}
-            </p>
+            <ExtensionPicker
+              selectedPresets={selectedPresets}
+              onChangeSelectedPresets={setSelectedPresets}
+              customEnabled={customEnabled}
+              onChangeCustomEnabled={setCustomEnabled}
+              customExt={customExt}
+              onChangeCustomExt={setCustomExt}
+            />
           </section>
         )}
         {step === 4 && (
@@ -1409,6 +1303,24 @@ function ActivityPane({
 
 // ----------------------------- Settings pane -----------------------------
 
+function snapshotParentForFolder(
+  f: Config["watchedFolders"][number],
+  cfg: Config,
+  systemDefaultParent: string,
+): string {
+  return (
+    f.snapshotRootOverride ??
+    cfg.defaultSnapshotRoot ??
+    systemDefaultParent
+  );
+}
+
+type PendingSnapshotMove =
+  | { kind: "folder"; folderId: string; newParent: string | null }
+  | { kind: "default"; newParent: string | null };
+
+type RemoveFolderTarget = { id: string; path: string };
+
 function SettingsPane({
   cfg,
   onReload,
@@ -1417,12 +1329,128 @@ function SettingsPane({
   onReload: () => Promise<void>;
 }) {
   const { t, i18n } = useTranslation();
-  const [extInput, setExtInput] = useState("");
   const [previewById, setPreviewById] = useState<Record<string, string>>({});
+  const [addFolderOpen, setAddFolderOpen] = useState(false);
+  const [systemParent, setSystemParent] = useState<string>("");
+  const [pendingMove, setPendingMove] = useState<PendingSnapshotMove | null>(
+    null,
+  );
+  const [removeTarget, setRemoveTarget] = useState<RemoveFolderTarget | null>(
+    null,
+  );
+  const [locationBusy, setLocationBusy] = useState(false);
+
+  useEffect(() => {
+    void getSystemSnapshotParent()
+      .then(setSystemParent)
+      .catch(() => setSystemParent(""));
+  }, []);
+
+  const applyPendingMove = async (moveExisting: boolean) => {
+    if (!pendingMove || locationBusy) return;
+    setLocationBusy(true);
+    try {
+      if (pendingMove.kind === "folder") {
+        await setFolderSnapshotRoot(
+          pendingMove.folderId,
+          pendingMove.newParent,
+          moveExisting,
+        );
+      } else {
+        await setDefaultSnapshotRoot(pendingMove.newParent, moveExisting);
+      }
+      setPendingMove(null);
+      await onReload();
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setLocationBusy(false);
+    }
+  };
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <h2 className="text-lg font-semibold text-white">{t("settings.title")}</h2>
+
+      <AddFolderModal
+        open={addFolderOpen}
+        onClose={() => setAddFolderOpen(false)}
+        onAdded={() => onReload()}
+        pickDirectory={pickDirectory}
+      />
+
+      <ConfirmDialog
+        open={pendingMove !== null}
+        title={t("settings.moveDialog.title")}
+        description={t("settings.moveDialog.body")}
+        warning={t("settings.moveDialog.dontMoveWarning")}
+        actions={[
+          {
+            label: t("common.cancel"),
+            variant: "ghost",
+            onClick: () => {
+              if (!locationBusy) setPendingMove(null);
+            },
+          },
+          {
+            label: t("settings.moveDialog.dontMove"),
+            variant: "secondary",
+            onClick: () => void applyPendingMove(false),
+            disabled: locationBusy,
+          },
+          {
+            label: locationBusy ? t("common.loading") : t("settings.moveDialog.move"),
+            variant: "default",
+            onClick: () => void applyPendingMove(true),
+            disabled: locationBusy,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={removeTarget !== null}
+        title={t("settings.removeDialog.title")}
+        description={t("settings.removeDialog.body", {
+          path: removeTarget?.path ?? "",
+        })}
+        actions={[
+          {
+            label: t("common.cancel"),
+            variant: "ghost",
+            onClick: () => setRemoveTarget(null),
+          },
+          {
+            label: t("settings.removeDialog.removeOnly"),
+            variant: "secondary",
+            onClick: () => {
+              const id = removeTarget?.id;
+              setRemoveTarget(null);
+              if (id)
+                void removeWatchedFolder(id)
+                  .then(() => onReload())
+                  .catch((e) => alert(String(e)));
+            },
+          },
+          {
+            label: t("settings.removeDialog.removeAndDelete"),
+            variant: "destructive",
+            onClick: () => {
+              const id = removeTarget?.id;
+              setRemoveTarget(null);
+              if (!id) return;
+              void (async () => {
+                try {
+                  await deleteFolderSnapshots(id);
+                  await removeWatchedFolder(id);
+                  await onReload();
+                } catch (e) {
+                  alert(String(e));
+                }
+              })();
+            },
+          },
+        ]}
+      />
 
       <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
         <h3 className="text-sm font-medium text-zinc-300">
@@ -1434,6 +1462,12 @@ function SettingsPane({
             className="space-y-2 rounded-md border border-zinc-800 p-3 text-sm"
           >
             <div className="font-mono text-xs text-zinc-400">{f.path}</div>
+            <div className="space-y-1 text-xs text-zinc-500">
+              <div>{t("settings.snapshotLocation")}</div>
+              <div className="break-all font-mono text-zinc-300">
+                {snapshotParentForFolder(f, cfg, systemParent)}/{f.id}
+              </div>
+            </div>
             <label className="flex items-center gap-2 text-xs text-zinc-400">
               <input
                 type="checkbox"
@@ -1451,10 +1485,48 @@ function SettingsPane({
                 type="button"
                 variant="ghost"
                 className="text-xs text-red-300"
-                onClick={() => void removeWatchedFolder(f.id).then(() => onReload())}
+                onClick={() =>
+                  setRemoveTarget({ id: f.id, path: f.path })
+                }
               >
                 {t("settings.remove")}
               </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="text-xs"
+                onClick={async () => {
+                  try {
+                    const picked = await pickDirectory();
+                    if (!picked) return;
+                    setPendingMove({
+                      kind: "folder",
+                      folderId: f.id,
+                      newParent: picked,
+                    });
+                  } catch (e) {
+                    alert(String(e));
+                  }
+                }}
+              >
+                {t("settings.changeLocation")}
+              </Button>
+              {f.snapshotRootOverride != null && f.snapshotRootOverride !== "" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() =>
+                    setPendingMove({
+                      kind: "folder",
+                      folderId: f.id,
+                      newParent: null,
+                    })
+                  }
+                >
+                  {t("settings.resetLocation")}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="secondary"
@@ -1484,6 +1556,16 @@ function SettingsPane({
               >
                 {t("settings.reveal")}
               </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="text-xs"
+                onClick={() =>
+                  void revealPath(snapshotParentForFolder(f, cfg, systemParent))
+                }
+              >
+                {t("settings.revealSnapshotRoot")}
+              </Button>
             </div>
             {previewById[f.id] && (
               <p className="text-xs text-zinc-500">{previewById[f.id]}</p>
@@ -1493,29 +1575,10 @@ function SettingsPane({
         <Button
           type="button"
           variant="secondary"
-          onClick={async () => {
-            try {
-              const dir = await pickDirectory();
-              if (!dir) return;
-              const exts = extInput
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              await addWatchedFolder(dir, exts.length ? exts : ["md", "docx"]);
-              await onReload();
-            } catch (e) {
-              alert(String(e));
-            }
-          }}
+          onClick={() => setAddFolderOpen(true)}
         >
           {t("settings.add")}
         </Button>
-        <input
-          className="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-200"
-          placeholder={t("settings.addHint")}
-          value={extInput}
-          onChange={(e) => setExtInput(e.target.value)}
-        />
       </div>
 
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
@@ -1560,15 +1623,57 @@ function SettingsPane({
         <h3 className="text-sm font-medium text-zinc-300">
           {t("settings.storage")}
         </h3>
-        <StorageBlock />
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-xs"
-          onClick={() => void runRetentionNow()}
-        >
-          {t("settings.retention")}
-        </Button>
+        <div className="space-y-2 text-xs text-zinc-500">
+          <div className="font-medium text-zinc-300">
+            {t("settings.snapshotLocationDefault")}
+          </div>
+          <div className="break-all font-mono text-zinc-400">
+            {(cfg.defaultSnapshotRoot ?? systemParent) || "—"}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              className="text-xs"
+              onClick={async () => {
+                try {
+                  const picked = await pickDirectory();
+                  if (!picked) return;
+                  setPendingMove({ kind: "default", newParent: picked });
+                } catch (e) {
+                  alert(String(e));
+                }
+              }}
+            >
+              {t("settings.changeLocation")}
+            </Button>
+            {cfg.defaultSnapshotRoot != null &&
+              cfg.defaultSnapshotRoot !== "" && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() =>
+                    setPendingMove({ kind: "default", newParent: null })
+                  }
+                >
+                  {t("settings.resetLocation")}
+                </Button>
+              )}
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-xs"
+              onClick={() => {
+                const p = cfg.defaultSnapshotRoot ?? systemParent;
+                if (p) void revealPath(p);
+              }}
+            >
+              {t("settings.revealSnapshotRoot")}
+            </Button>
+          </div>
+        </div>
+        <StorageBlock cfg={cfg} />
       </div>
 
       <div
@@ -1624,14 +1729,14 @@ function WatcherStatus() {
   );
 }
 
-function StorageBlock() {
+function StorageBlock({ cfg }: { cfg: Config }) {
   const { t } = useTranslation();
   const [u, setU] = useState<string>("");
   useEffect(() => {
     void getStorageUsage()
       .then((s) => setU(formatBytes(s.totalBytes)))
       .catch(() => setU("?"));
-  }, []);
+  }, [cfg]);
   return (
     <p className="text-xs text-zinc-500">
       {t("settings.totalStorage", { n: u })}

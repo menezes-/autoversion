@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0] — 2026-05-10
+
+### Settings & storage
+
+- **Configurable snapshot locations**: each watched folder can use its own snapshot parent directory (`<parent>/<folder-id>/`), and there is a **global default parent** for folders without an override. Both default to `~/Library/Application Support/AutoVersion/repos`. Changing location prompts **Move / Don’t move / Cancel**; “Don’t move” updates config only and leaves old data on disk as an orphan.
+- **Remove folder** now asks **Remove only** vs **Remove and delete snapshots** (deletes the hidden git store for that folder before removing it from config).
+- **Add folder** from Settings opens a modal with the **same extension preset picker** as the wizard (including new **PDF** preset).
+- New IPC: `get_system_snapshot_parent`, `set_default_snapshot_root`, `set_folder_snapshot_root`, `delete_folder_snapshots`. Config gains `defaultSnapshotRoot` and per-folder `snapshotRootOverride`.
+- Removed the **Run retention now** Settings control and the `run_retention_now` command (it was a no-op until real retention work lands).
+
+### Formats
+
+- **PDF** (`.pdf`) in the format registry with conservative temp-file ignores; diff kind remains opaque binary (metadata-only in the UI).
+
+### UI
+
+- Reusable **`ExtensionPicker`**, **`ConfirmDialog`**, and **`AddFolderModal`** components; snapshot path labels simplified in i18n.
+
 ## [0.3.0] — 2026-05-10
 
 ### Wizard
@@ -113,9 +131,8 @@
 - Onboarding when no folders; folder picker via `@tauri-apps/plugin-dialog`.
 - Main layout: Folders / Settings / About; history columns; diff modes (previous / current / pick); text line diff, docx word diff (`mammoth` + `diff`), opaque metadata.
 - Restore with confirmation; `restore-completed` toast; live `snapshot-created` / `watcher-error` listeners.
-- Settings: enable toggle, remove, match preview, Reveal in Finder (`opener`), pause/resume, storage usage, retention button (no-op until policy work).
+- Settings: enable toggle, remove, match preview, Reveal in Finder (`opener`), pause/resume, storage usage.
 
 ### Packaging (step 13)
 
 - `pnpm tauri build` produces unsigned macOS bundle; Gatekeeper notes in README.
-- `run_retention_now` is a logged no-op (default keep-everything).

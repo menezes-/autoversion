@@ -7,7 +7,7 @@ use git2::{Commit, Delta, DiffOptions, Repository, Sort, Tree};
 use serde::Serialize;
 use tauri::State;
 
-use crate::config::Config;
+use crate::config::{Config, WatchedFolder};
 use crate::error::AppError;
 use crate::storage;
 
@@ -56,14 +56,16 @@ struct DiffMetrics {
     is_tombstone: bool,
 }
 
-fn folder_by_id<'a>(
-    cfg: &'a Config,
-    id: &str,
-) -> Result<&'a crate::config::WatchedFolder, AppError> {
+fn folder_by_id<'a>(cfg: &'a Config, id: &str) -> Result<&'a WatchedFolder, AppError> {
     cfg.watched_folders
         .iter()
         .find(|f| f.id == id)
         .ok_or_else(|| AppError::NotFound(format!("folder id {id}")))
+}
+
+fn repo_path_for_command(cfg: &Config, folder_id: &str) -> Result<PathBuf, AppError> {
+    let folder = folder_by_id(cfg, folder_id)?;
+    storage::resolve_repo_path(cfg, folder)
 }
 
 fn walk_tree_paths(repo: &Repository, tree: &Tree, prefix: &Path) -> Result<Vec<String>, AppError> {
@@ -163,10 +165,10 @@ pub async fn list_watched_files(
     folder_id: String,
 ) -> Result<Vec<FileEntry>, AppError> {
     let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-    let _folder = folder_by_id(&cfg, &folder_id)?;
+    let repo_path = repo_path_for_command(&cfg, &folder_id)?;
     drop(cfg);
 
-    let repo = match storage::open_existing_repo(&folder_id) {
+    let repo = match storage::open_existing_repo(&repo_path) {
         Ok(r) => r,
         Err(_) => return Ok(vec![]),
     };
@@ -190,10 +192,10 @@ pub async fn list_snapshots(
     relative_path: String,
 ) -> Result<Vec<Snapshot>, AppError> {
     let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-    let _folder = folder_by_id(&cfg, &folder_id)?;
+    let repo_path = repo_path_for_command(&cfg, &folder_id)?;
     drop(cfg);
 
-    let repo = storage::open_existing_repo(&folder_id)?;
+    let repo = storage::open_existing_repo(&repo_path)?;
     let rel = PathBuf::from(&relative_path);
     let mut rw = repo.revwalk()?;
     rw.set_sorting(Sort::TIME)?;
@@ -243,9 +245,9 @@ pub async fn get_snapshot_content(
     relative_path: String,
 ) -> Result<Vec<u8>, AppError> {
     let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-    let _folder = folder_by_id(&cfg, &folder_id)?;
+    let repo_path = repo_path_for_command(&cfg, &folder_id)?;
     drop(cfg);
-    storage::read_blob_at_commit(&folder_id, &commit_sha, &relative_path)
+    storage::read_blob_at_commit(&repo_path, &commit_sha, &relative_path)
 }
 
 #[tauri::command]
@@ -272,19 +274,26 @@ pub async fn list_recent_changes(
     limit: Option<usize>,
 ) -> Result<Vec<ActivityEntry>, AppError> {
     let limit = limit.unwrap_or(200);
-    let folders: Vec<crate::config::WatchedFolder> = {
+    let (folders, cfg_snapshot): (Vec<WatchedFolder>, Config) = {
         let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
-        cfg.watched_folders
-            .iter()
-            .filter(|f| f.enabled)
-            .cloned()
-            .collect()
+        (
+            cfg.watched_folders
+                .iter()
+                .filter(|f| f.enabled)
+                .cloned()
+                .collect(),
+            cfg.clone(),
+        )
     };
 
     let mut all: Vec<ActivityEntry> = vec![];
 
     for folder in folders {
-        let repo = match storage::open_existing_repo(&folder.id) {
+        let repo_path = match storage::resolve_repo_path(&cfg_snapshot, &folder) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let repo = match storage::open_existing_repo(&repo_path) {
             Ok(r) => r,
             Err(_) => continue,
         };

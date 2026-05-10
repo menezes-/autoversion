@@ -229,6 +229,10 @@ pub fn run() {
             commands::config::update_watched_folder,
             commands::config::remove_watched_folder,
             commands::config::preview_folder_matches,
+            commands::config::get_system_snapshot_parent,
+            commands::config::set_default_snapshot_root,
+            commands::config::set_folder_snapshot_root,
+            commands::config::delete_folder_snapshots,
             commands::history::list_watched_files,
             commands::history::list_snapshots,
             commands::history::list_recent_changes,
@@ -243,7 +247,6 @@ pub fn run() {
             commands::actions::open_watched_file,
             commands::status::get_status,
             commands::status::get_storage_usage,
-            commands::status::run_retention_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

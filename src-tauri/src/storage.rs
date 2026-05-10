@@ -1,4 +1,4 @@
-//! Hidden per-folder git snapshot stores under Application Support.
+//! Hidden per-folder git snapshot stores under Application Support (or user-chosen roots).
 
 use std::path::{Path, PathBuf};
 
@@ -6,33 +6,49 @@ use chrono::Utc;
 use git2::{Repository, Signature};
 use tauri::{AppHandle, Emitter};
 
-use crate::config::WatchedFolder;
+use crate::config::{Config, WatchedFolder};
 use crate::error::AppError;
 use crate::events::SnapshotCreatedPayload;
 use crate::hash;
 
 pub const MAX_SNAPSHOT_BYTES: u64 = 50 * 1024 * 1024;
 
-fn repos_base() -> Result<PathBuf, AppError> {
+/// Default parent directory: `~/Library/Application Support/AutoVersion/repos`.
+pub fn system_repos_base() -> Result<PathBuf, AppError> {
     let base = dirs::config_dir().ok_or_else(|| {
         AppError::Config("could not resolve Application Support directory".to_string())
     })?;
     Ok(base.join("AutoVersion").join("repos"))
 }
 
-/// Exposed for storage usage UI / retention.
-pub fn repo_path_for_folder_id(folder_id: &str) -> Result<PathBuf, AppError> {
-    Ok(repos_base()?.join(folder_id))
+fn repos_base() -> Result<PathBuf, AppError> {
+    system_repos_base()
 }
 
-pub fn open_existing_repo(folder_id: &str) -> Result<Repository, AppError> {
-    let p = repo_path_for_folder_id(folder_id)?;
-    if !p.join(".git").exists() {
+/// Parent directory for this folder's git repo, then `<folder.id>/`.
+pub fn resolve_repo_parent(config: &Config, folder: &WatchedFolder) -> Result<PathBuf, AppError> {
+    if let Some(ref o) = folder.snapshot_root_override {
+        return Ok(o.clone());
+    }
+    if let Some(ref d) = config.default_snapshot_root {
+        return Ok(d.clone());
+    }
+    repos_base()
+}
+
+/// Full path to the git working tree for this watched folder.
+pub fn resolve_repo_path(config: &Config, folder: &WatchedFolder) -> Result<PathBuf, AppError> {
+    Ok(resolve_repo_parent(config, folder)?.join(&folder.id))
+}
+
+pub fn open_existing_repo(repo_path: &Path) -> Result<Repository, AppError> {
+    if !repo_path.join(".git").exists() {
         return Err(AppError::NotFound(format!(
-            "no snapshot repo for id {folder_id}"
+            "no snapshot repo at {}",
+            repo_path.display()
         )));
     }
-    Repository::open(&p).map_err(AppError::from)
+    Repository::open(repo_path).map_err(AppError::from)
 }
 
 fn open_repo(repo_path: &Path) -> Result<Repository, AppError> {
@@ -88,6 +104,7 @@ fn remove_worktree_file(repo: &Repository, rel: &Path) -> Result<(), AppError> {
 /// Snapshot `abs_file` (must be inside `folder.path`). Returns new commit hex if a commit was created.
 pub fn snapshot_watched_file(
     app: &AppHandle,
+    config: &Config,
     folder: &WatchedFolder,
     abs_file: &Path,
 ) -> Result<Option<String>, AppError> {
@@ -100,7 +117,7 @@ pub fn snapshot_watched_file(
         .map_err(|_| AppError::BadRequest("file is outside watched folder".to_string()))?
         .to_path_buf();
 
-    let repo_path = repos_base()?.join(&folder.id);
+    let repo_path = resolve_repo_path(config, folder)?;
     let repo = open_repo(&repo_path)?;
 
     if abs_file.exists() {
@@ -219,11 +236,12 @@ fn emit_snapshot(
 #[allow(dead_code)]
 pub fn snapshot_current_if_exists(
     app: &AppHandle,
+    config: &Config,
     folder: &WatchedFolder,
     abs_file: &Path,
 ) -> Result<Option<String>, AppError> {
     if abs_file.exists() {
-        snapshot_watched_file(app, folder, abs_file)
+        snapshot_watched_file(app, config, folder, abs_file)
     } else {
         Ok(None)
     }
@@ -231,11 +249,11 @@ pub fn snapshot_current_if_exists(
 
 /// Read object bytes for `relative_path` at `commit_sha`.
 pub fn read_blob_at_commit(
-    folder_id: &str,
+    repo_path: &Path,
     commit_sha: &str,
     relative_path: &str,
 ) -> Result<Vec<u8>, AppError> {
-    let repo = open_existing_repo(folder_id)?;
+    let repo = open_existing_repo(repo_path)?;
     let oid = git2::Oid::from_str(commit_sha).map_err(|e| AppError::BadRequest(e.to_string()))?;
     let commit = repo.find_commit(oid)?;
     let tree = commit.tree()?;
@@ -254,4 +272,69 @@ pub fn write_bytes_to_disk(dest: &Path, bytes: &[u8]) -> Result<(), AppError> {
     }
     std::fs::write(dest, bytes)?;
     Ok(())
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), AppError> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else if ty.is_file() || ty.is_symlink() {
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move a snapshot repo directory to a new path (same-disk rename, else copy + remove source).
+pub fn move_repo_dir(from: &Path, to: &Path) -> Result<(), AppError> {
+    if from == to {
+        return Ok(());
+    }
+    if to.exists() {
+        return Err(AppError::BadRequest(format!(
+            "destination already exists: {}",
+            to.display()
+        )));
+    }
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::rename(from, to) {
+        Ok(()) => Ok(()),
+        Err(e) if e.raw_os_error() == Some(18) => {
+            copy_dir_recursive(from, to)?;
+            std::fs::remove_dir_all(from).map_err(AppError::from)
+        }
+        Err(e) => Err(AppError::from(e)),
+    }
+}
+
+/// Delete `repo_path` only if it resolves to the canonical path for this folder (safety guard).
+pub fn delete_repo_at_resolved_path(
+    config: &Config,
+    folder: &WatchedFolder,
+    repo_path: &Path,
+) -> Result<(), AppError> {
+    let expected = resolve_repo_path(config, folder)?;
+    let exp_canon = expected.canonicalize().unwrap_or(expected);
+    let got_canon = repo_path
+        .canonicalize()
+        .unwrap_or_else(|_| repo_path.to_path_buf());
+    if exp_canon != got_canon {
+        return Err(AppError::BadRequest(
+            "refusing to delete snapshot store: path mismatch".to_string(),
+        ));
+    }
+    if !repo_path.exists() {
+        return Ok(());
+    }
+    std::fs::remove_dir_all(repo_path).map_err(AppError::from)
 }

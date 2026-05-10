@@ -65,6 +65,12 @@ pub static HANDLERS: &[FormatHandler] = &[
         display_name: "Source code",
     },
     FormatHandler {
+        extensions: &["pdf"],
+        ignore_patterns: &["*.pdf.tmp", "*.pdf.crdownload", "*.pdf.part"],
+        diff_kind: DiffKind::OpaqueBinary,
+        display_name: "PDF",
+    },
+    FormatHandler {
         extensions: &[],
         ignore_patterns: &[],
         diff_kind: DiffKind::OpaqueBinary,
@@ -121,6 +127,14 @@ mod tests {
         let h = find_handler("xyz");
         assert_eq!(h.diff_kind, DiffKind::OpaqueBinary);
         assert_eq!(h.display_name, "Other");
+    }
+
+    #[test]
+    fn pdf_maps_to_opaque_with_ignores() {
+        let h = find_handler("pdf");
+        assert_eq!(h.diff_kind, DiffKind::OpaqueBinary);
+        assert_eq!(h.display_name, "PDF");
+        assert!(h.ignore_patterns.contains(&"*.pdf.tmp"));
     }
 
     #[test]

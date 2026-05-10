@@ -64,7 +64,7 @@ pub async fn get_storage_usage(
     let mut per_folder = vec![];
     let mut total_bytes = 0u64;
     for f in &cfg.watched_folders {
-        let Ok(repo_path) = storage::repo_path_for_folder_id(&f.id) else {
+        let Ok(repo_path) = storage::resolve_repo_path(&cfg, f) else {
             continue;
         };
         let bytes = if repo_path.exists() {
@@ -82,10 +82,4 @@ pub async fn get_storage_usage(
         total_bytes,
         per_folder,
     })
-}
-
-#[tauri::command]
-pub async fn run_retention_now() -> Result<(), AppError> {
-    tracing::info!("run_retention_now: no-op in v1 (keep everything default)");
-    Ok(())
 }

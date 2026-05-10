@@ -13,6 +13,8 @@ export interface WatchedFolder {
   extensions: string[];
   userIgnorePatterns: string[];
   enabled: boolean;
+  /** Parent dir for `<id>/` snapshot repo; omit = use global default. */
+  snapshotRootOverride?: string | null;
 }
 
 export interface Config {
@@ -20,6 +22,8 @@ export interface Config {
   startAtLogin: boolean;
   retentionPolicy: RetentionPolicy;
   watchingPaused: boolean;
+  /** Parent dir for all repos without per-folder override. */
+  defaultSnapshotRoot?: string | null;
 }
 
 export interface WatchedFolderPatch {
@@ -27,6 +31,7 @@ export interface WatchedFolderPatch {
   extensions?: string[];
   userIgnorePatterns?: string[];
   enabled?: boolean;
+  snapshotRootOverride?: string;
 }
 
 export interface AppError {
@@ -111,6 +116,36 @@ export async function updateWatchedFolder(
 
 export async function removeWatchedFolder(id: string): Promise<void> {
   return invoke<void>("remove_watched_folder", { id });
+}
+
+export async function getSystemSnapshotParent(): Promise<string> {
+  return invoke<string>("get_system_snapshot_parent");
+}
+
+export async function setDefaultSnapshotRoot(
+  newRoot: string | null,
+  moveExisting: boolean,
+): Promise<void> {
+  return invoke<void>("set_default_snapshot_root", {
+    newRoot,
+    moveExisting,
+  });
+}
+
+export async function setFolderSnapshotRoot(
+  folderId: string,
+  newRoot: string | null,
+  moveExisting: boolean,
+): Promise<WatchedFolder> {
+  return invoke<WatchedFolder>("set_folder_snapshot_root", {
+    folderId,
+    newRoot,
+    moveExisting,
+  });
+}
+
+export async function deleteFolderSnapshots(folderId: string): Promise<void> {
+  return invoke<void>("delete_folder_snapshots", { folderId });
 }
 
 export async function previewFolderMatches(
@@ -203,10 +238,6 @@ export async function getStatus(): Promise<Status> {
 
 export async function getStorageUsage(): Promise<StorageUsage> {
   return invoke<StorageUsage>("get_storage_usage");
-}
-
-export async function runRetentionNow(): Promise<void> {
-  return invoke<void>("run_retention_now");
 }
 
 export function bytesToUtf8(bytes: number[] | Uint8Array): string {

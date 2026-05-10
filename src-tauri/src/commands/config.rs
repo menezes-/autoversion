@@ -12,6 +12,7 @@ use crate::events::ConfigChangedPayload;
 use crate::ignore;
 use crate::ignore::{compile_globset, extension_allowed, glob_matches, try_relative};
 use crate::notify_watcher_reload;
+use crate::storage;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,6 +80,7 @@ pub async fn add_watched_folder(
         extensions: normalized_ext,
         user_ignore_patterns: vec![],
         enabled: true,
+        snapshot_root_override: None,
     };
 
     {
@@ -137,6 +139,12 @@ pub async fn update_watched_folder(
     }
     if let Some(en) = patch.enabled {
         cfg.watched_folders[pos].enabled = en;
+    }
+    if let Some(root) = patch.snapshot_root_override {
+        let canonical = root
+            .canonicalize()
+            .map_err(|e| AppError::BadRequest(format!("could not resolve snapshot root: {e}")))?;
+        cfg.watched_folders[pos].snapshot_root_override = Some(canonical);
     }
 
     let updated = cfg.watched_folders[pos].clone();
@@ -230,4 +238,151 @@ pub async fn preview_folder_matches(
 
     matched.sort();
     Ok(FolderMatchPreview { matched, ignored })
+}
+
+fn canonical_parent_dir(s: &str) -> Result<PathBuf, AppError> {
+    let p = PathBuf::from(s);
+    p.canonicalize()
+        .map_err(|e| AppError::BadRequest(format!("could not resolve directory: {e}")))
+}
+
+/// Canonical path to the built-in default snapshot parent (`…/AutoVersion/repos`).
+#[tauri::command]
+pub async fn get_system_snapshot_parent() -> Result<String, AppError> {
+    Ok(storage::system_repos_base()?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn set_folder_snapshot_root(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<Config>>>,
+    folder_id: String,
+    new_root: Option<String>,
+    move_existing: bool,
+) -> Result<WatchedFolder, AppError> {
+    let new_override = match new_root {
+        None => None,
+        Some(s) if s.trim().is_empty() => None,
+        Some(s) => Some(canonical_parent_dir(&s)?),
+    };
+
+    let mut cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
+    let pos = cfg
+        .watched_folders
+        .iter()
+        .position(|f| f.id == folder_id)
+        .ok_or_else(|| AppError::NotFound(format!("folder id {folder_id}")))?;
+
+    let folder = cfg.watched_folders[pos].clone();
+    let old_path = storage::resolve_repo_path(&cfg, &folder)?;
+
+    let mut patched = folder.clone();
+    patched.snapshot_root_override = new_override.clone();
+    let new_path = storage::resolve_repo_path(&cfg, &patched)?;
+
+    if old_path == new_path {
+        cfg.watched_folders[pos].snapshot_root_override = new_override;
+        config::save_config_to_disk(&cfg)?;
+        let updated = cfg.watched_folders[pos].clone();
+        drop(cfg);
+        emit_config_changed(&app);
+        notify_watcher_reload(&app);
+        return Ok(updated);
+    }
+
+    if new_path.exists() {
+        return Err(AppError::BadRequest(format!(
+            "snapshot destination already exists: {}",
+            new_path.display()
+        )));
+    }
+
+    if move_existing && old_path.exists() {
+        storage::move_repo_dir(&old_path, &new_path)?;
+    }
+
+    cfg.watched_folders[pos].snapshot_root_override = new_override;
+    config::save_config_to_disk(&cfg)?;
+    let updated = cfg.watched_folders[pos].clone();
+    drop(cfg);
+    emit_config_changed(&app);
+    notify_watcher_reload(&app);
+    Ok(updated)
+}
+
+#[tauri::command]
+pub async fn set_default_snapshot_root(
+    app: AppHandle,
+    state: State<'_, Arc<Mutex<Config>>>,
+    new_root: Option<String>,
+    move_existing: bool,
+) -> Result<(), AppError> {
+    let new_default = match new_root {
+        None => None,
+        Some(s) if s.trim().is_empty() => None,
+        Some(s) => Some(canonical_parent_dir(&s)?),
+    };
+
+    let mut cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
+
+    let mut pending = cfg.clone();
+    pending.default_snapshot_root = new_default.clone();
+
+    for f in &cfg.watched_folders {
+        if f.snapshot_root_override.is_some() {
+            continue;
+        }
+        let old_path = storage::resolve_repo_path(&cfg, f)?;
+        let new_path = storage::resolve_repo_path(&pending, f)?;
+        if old_path == new_path {
+            continue;
+        }
+        if new_path.exists() {
+            return Err(AppError::BadRequest(format!(
+                "snapshot destination already exists for folder {}: {}",
+                f.id,
+                new_path.display()
+            )));
+        }
+    }
+
+    for f in &cfg.watched_folders {
+        if f.snapshot_root_override.is_some() {
+            continue;
+        }
+        let old_path = storage::resolve_repo_path(&cfg, f)?;
+        let new_path = storage::resolve_repo_path(&pending, f)?;
+        if old_path == new_path {
+            continue;
+        }
+        if move_existing && old_path.exists() {
+            storage::move_repo_dir(&old_path, &new_path)?;
+        }
+    }
+
+    cfg.default_snapshot_root = new_default;
+    config::save_config_to_disk(&cfg)?;
+    drop(cfg);
+    emit_config_changed(&app);
+    notify_watcher_reload(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_folder_snapshots(
+    state: State<'_, Arc<Mutex<Config>>>,
+    folder_id: String,
+) -> Result<(), AppError> {
+    let (cfg, folder, repo_path) = {
+        let cfg = state.lock().map_err(|e| AppError::Config(e.to_string()))?;
+        let folder = cfg
+            .watched_folders
+            .iter()
+            .find(|f| f.id == folder_id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("folder id {folder_id}")))?;
+        let repo_path = storage::resolve_repo_path(&cfg, &folder)?;
+        (cfg.clone(), folder, repo_path)
+    };
+    storage::delete_repo_at_resolved_path(&cfg, &folder, &repo_path)
 }

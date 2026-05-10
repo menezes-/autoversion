@@ -98,7 +98,7 @@ fn handle_debounced_event(
         }
 
         tracing::info!("snapshot settle: {}", path.display());
-        if let Err(e) = storage::snapshot_watched_file(app, folder, path) {
+        if let Err(e) = storage::snapshot_watched_file(app, &cfg, folder, path) {
             tracing::error!("snapshot failed: {e}");
             emit_watcher_error(app, &folder.id, &e.to_string());
         }

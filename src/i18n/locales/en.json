@@ -49,6 +49,8 @@
         "markdownHint": ".md, .markdown, .txt",
         "code": "Code",
         "codeHint": "Common languages: .py, .ts, .rs, .js, .go, .java, …",
+        "pdf": "PDF documents (.pdf)",
+        "pdfHint": "Academic papers and scans; snapshots are stored, diff is metadata-only.",
         "custom": "Custom",
         "customHint": "Comma-separated list, no dots.",
         "customPlaceholder": "e.g. docx, md, tex"
@@ -123,6 +125,27 @@
     "enabled": "Enabled",
     "add": "Add folder",
     "addHint": "Extensions for new folder (comma-separated)",
+    "addFolderModal": {
+      "title": "Add watched folder"
+    },
+    "snapshotLocation": "Snapshot store for this folder",
+    "snapshotLocationDefault": "Default snapshot location",
+    "changeLocation": "Change snapshot location…",
+    "resetLocation": "Reset to default",
+    "revealSnapshotRoot": "Reveal snapshot folder in Finder",
+    "moveDialog": {
+      "title": "Move existing snapshots?",
+      "body": "You changed where snapshots are stored. Move existing snapshot data to the new location so history stays available?",
+      "dontMoveWarning": "Don't move: the app will use the new location from now on, but old snapshot data stays on disk where it was (you can delete it manually in Finder).",
+      "move": "Move snapshots",
+      "dontMove": "Don't move"
+    },
+    "removeDialog": {
+      "title": "Remove watched folder",
+      "body": "Stop watching {{path}}? You can also delete all snapshots stored for this folder.",
+      "removeOnly": "Remove only",
+      "removeAndDelete": "Remove and delete snapshots"
+    },
     "remove": "Remove",
     "preview": "Preview matches",
     "previewResult": "{{matched}} matched, {{ignored}} ignored",
@@ -138,7 +161,6 @@
     "resume": "Resume",
     "storage": "Storage",
     "totalStorage": "Total snapshot storage: {{n}}",
-    "retention": "Run retention now (v1 no-op)",
     "language": "Language",
     "languageEnglish": "English",
     "languagePortuguese": "Português (Brasil)"
@@ -188,7 +210,7 @@
       "configTitle": "Settings",
       "config": "Stored at ~/Library/Application Support/AutoVersion/config.json — a single small JSON file with your watched folders and preferences.",
       "snapshotsTitle": "Snapshots",
-      "snapshots": "Each watched folder gets its own snapshot store under ~/Library/Application Support/AutoVersion/repos/<folder-id>/.",
+      "snapshots": "Each watched folder gets its own snapshot store under `<snapshot-parent>/<folder-id>/`. By default `<snapshot-parent>` is ~/Library/Application Support/AutoVersion/repos; you can change the global default or set a path per folder in Settings.",
       "logsTitle": "Logs",
       "logs": "Diagnostic logs go to ~/Library/Logs/AutoVersion/autoversion.log. Useful if you ever need to file a bug report.",
       "nukeTitle": "Removing all AutoVersion data",
@@ -206,7 +228,7 @@
   },
   "about": {
     "title": "About",
-    "description": "AutoVersion keeps automatic snapshots of files in folders you choose. Snapshots live under ~/Library/Application Support/AutoVersion/repos/.",
+    "description": "AutoVersion keeps automatic snapshots of files in folders you choose. By default snapshots live under ~/Library/Application Support/AutoVersion/repos/; you can change locations in Settings.",
     "gatekeeper": "Unsigned macOS build: first open with right-click → Open, or xattr -cr /Applications/AutoVersion.app."
   }
 }

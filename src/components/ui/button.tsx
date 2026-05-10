@@ -12,6 +12,7 @@ const buttonVariants = cva(
         default: "bg-zinc-100 text-zinc-950 hover:bg-zinc-200",
         secondary: "bg-zinc-800 text-zinc-100 hover:bg-zinc-700",
         ghost: "hover:bg-zinc-800 hover:text-zinc-50",
+        destructive: "bg-red-900 text-red-50 hover:bg-red-800",
       },
       size: {
         default: "h-10 px-4 py-2",

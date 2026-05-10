@@ -17,6 +17,9 @@ pub struct Config {
     /// When true, debounced events are ignored (menu bar + settings).
     #[serde(default)]
     pub watching_paused: bool,
+    /// Parent directory for snapshot repos when a folder has no override (`…/repos`).
+    #[serde(default)]
+    pub default_snapshot_root: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -26,6 +29,7 @@ impl Default for Config {
             start_at_login: true,
             retention_policy: RetentionPolicy::default(),
             watching_paused: false,
+            default_snapshot_root: None,
         }
     }
 }
@@ -50,6 +54,9 @@ pub struct WatchedFolder {
     pub extensions: Vec<String>,
     pub user_ignore_patterns: Vec<String>,
     pub enabled: bool,
+    /// Parent directory for this folder's repo (`<parent>/<id>/`). None = use global default.
+    #[serde(default)]
+    pub snapshot_root_override: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -59,6 +66,9 @@ pub struct WatchedFolderPatch {
     pub extensions: Option<Vec<String>>,
     pub user_ignore_patterns: Option<Vec<String>>,
     pub enabled: Option<bool>,
+    /// Set per-folder snapshot parent. Clearing uses `set_folder_snapshot_root` with null.
+    #[serde(default)]
+    pub snapshot_root_override: Option<PathBuf>,
 }
 
 pub fn config_file_path() -> Result<PathBuf, AppError> {
