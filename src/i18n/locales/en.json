@@ -108,7 +108,14 @@
     "diffHeader": "{{file}} · {{sha}} · {{when}}",
     "metaOnly": "Metadata-only (opaque binary)",
     "leftBytes": "Left: {{n}} bytes",
-    "rightBytes": "Right: {{n}} bytes"
+    "rightBytes": "Right: {{n}} bytes",
+    "dateFilter": {
+      "label": "Date",
+      "clear": "Show all",
+      "empty": "No versions on this day.",
+      "count_one": "1 version",
+      "count_other": "{{count}} versions"
+    }
   },
   "activity": {
     "title": "Recent changes",

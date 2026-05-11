@@ -79,6 +79,16 @@ function dateLocale(lang: string | undefined): Locale {
   return enUS;
 }
 
+/** Local-time YYYY-MM-DD key for an ISO timestamp. Used by the date filter so
+ * "today" matches the user's clock, not UTC. */
+function localDateKey(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /** Map i18next's `language` (e.g. `pt`) to our supported radio value `pt-BR`. */
 function normalizeUiLang(lng: string | undefined): "en" | "pt-BR" {
   if (!lng) return "en";
@@ -139,6 +149,7 @@ function App() {
   const [selectedSnap, setSelectedSnap] = useState<Snapshot | null>(null);
   const [compare, setCompare] = useState<CompareMode>("previous");
   const [comparePickSha, setComparePickSha] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
   const [leftBytes, setLeftBytes] = useState<number[]>([]);
   const [rightBytes, setRightBytes] = useState<number[]>([]);
   const [loadingSnaps, setLoadingSnaps] = useState(false);
@@ -208,6 +219,33 @@ function App() {
       .catch((e) => setErr(String(e)))
       .finally(() => setLoadingSnaps(false));
   }, [selectedFolderId, selectedFile, cfg?.watchedFolders]);
+
+  // Reset the day filter whenever the user picks a different file or folder —
+  // the previously-picked day rarely makes sense for the new file's history.
+  useEffect(() => {
+    setDateFilter(null);
+  }, [selectedFolderId, selectedFile]);
+
+  const filteredSnaps = useMemo(() => {
+    if (!dateFilter) return snaps;
+    return snaps.filter((s) => localDateKey(s.timestamp) === dateFilter);
+  }, [snaps, dateFilter]);
+
+  // If the currently-selected snapshot is filtered out by the date picker,
+  // fall back to the newest snapshot for the chosen day (or null if the day
+  // happens to have none — which only occurs transiently while the input is
+  // being changed since the input's min/max constrain the user to days that
+  // have snapshots).
+  useEffect(() => {
+    if (!dateFilter) return;
+    if (!selectedSnap) return;
+    const stillVisible = filteredSnaps.some(
+      (s) => s.commitSha === selectedSnap.commitSha,
+    );
+    if (!stillVisible) {
+      setSelectedSnap(filteredSnaps[0] ?? null);
+    }
+  }, [dateFilter, filteredSnaps, selectedSnap]);
 
   useEffect(() => {
     if (!selectedFolderId || !selectedFile || !selectedSnap) {
@@ -483,6 +521,9 @@ function App() {
               selectedFile={selectedFile}
               setSelectedFile={setSelectedFile}
               snaps={snaps}
+              filteredSnaps={filteredSnaps}
+              dateFilter={dateFilter}
+              setDateFilter={setDateFilter}
               loadingSnaps={loadingSnaps}
               selectedSnap={selectedSnap}
               setSelectedSnap={setSelectedSnap}
@@ -945,6 +986,9 @@ function FoldersPane({
   selectedFile,
   setSelectedFile,
   snaps,
+  filteredSnaps,
+  dateFilter,
+  setDateFilter,
   loadingSnaps,
   selectedSnap,
   setSelectedSnap,
@@ -964,6 +1008,9 @@ function FoldersPane({
   selectedFile: string | null;
   setSelectedFile: (p: string | null) => void;
   snaps: Snapshot[];
+  filteredSnaps: Snapshot[];
+  dateFilter: string | null;
+  setDateFilter: (s: string | null) => void;
   loadingSnaps: boolean;
   selectedSnap: Snapshot | null;
   setSelectedSnap: (s: Snapshot | null) => void;
@@ -979,6 +1026,21 @@ function FoldersPane({
   const fileBaseName = selectedFile
     ? selectedFile.split("/").pop() ?? selectedFile
     : null;
+
+  // Min/max for the date input come from the loaded snapshots so the user
+  // cannot land on a day without any saves. Snapshots are newest-first, so the
+  // last entry is the oldest.
+  const { minDate, maxDate } = useMemo(() => {
+    if (snaps.length === 0) return { minDate: undefined, maxDate: undefined };
+    const keys = snaps.map((s) => localDateKey(s.timestamp));
+    let min = keys[0];
+    let max = keys[0];
+    for (const k of keys) {
+      if (k < min) min = k;
+      if (k > max) max = k;
+    }
+    return { minDate: min, maxDate: max };
+  }, [snaps]);
 
   return (
     <div className="grid h-full min-h-[560px] grid-cols-12 gap-3">
@@ -1097,59 +1159,104 @@ function FoldersPane({
             {restoring ? t("folders.restoring") : t("folders.restore")}
           </Button>
         </div>
-        <div className="max-h-44 overflow-auto rounded-md border border-zinc-800 bg-zinc-950/40">
-          {loadingSnaps && (
-            <div className="space-y-1 p-2">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-9 animate-pulse rounded bg-zinc-900/60"
-                />
-              ))}
+        <div className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-950/40">
+          {selectedFile && snaps.length > 0 && (
+            <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-xs text-zinc-400">
+              <label
+                htmlFor="snapshot-date-filter"
+                className="text-zinc-500"
+              >
+                {t("folders.dateFilter.label")}
+              </label>
+              <input
+                id="snapshot-date-filter"
+                type="date"
+                className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-xs text-zinc-200 [color-scheme:dark]"
+                value={dateFilter ?? ""}
+                min={minDate}
+                max={maxDate}
+                onChange={(e) => setDateFilter(e.target.value || null)}
+              />
+              {dateFilter && (
+                <>
+                  <span className="text-zinc-500">
+                    {t("folders.dateFilter.count", {
+                      count: filteredSnaps.length,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-auto text-zinc-400 underline-offset-2 hover:text-zinc-200 hover:underline"
+                    onClick={() => setDateFilter(null)}
+                  >
+                    {t("folders.dateFilter.clear")}
+                  </button>
+                </>
+              )}
             </div>
           )}
-          {!loadingSnaps && selectedFile && snaps.length === 0 && (
-            <p className="px-3 py-2 text-xs text-zinc-500">
-              {t("folders.noSnapshots")}
-            </p>
-          )}
-          {!loadingSnaps && !selectedFile && (
-            <p className="px-3 py-2 text-xs text-zinc-500">
-              {t("folders.pickFile")}
-            </p>
-          )}
-          {!loadingSnaps &&
-            snaps.map((s) => {
-              const active = selectedSnap?.commitSha === s.commitSha;
-              return (
-                <button
-                  key={s.commitSha}
-                  type="button"
-                  onClick={() => setSelectedSnap(s)}
-                  className={`block w-full border-b border-zinc-800 px-3 py-2 text-left text-xs transition-colors last:border-0 ${
-                    active
-                      ? "border-l-2 border-emerald-500 bg-zinc-800/80 pl-[10px] text-white"
-                      : "text-zinc-300 hover:bg-zinc-800/40"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="flex-1 truncate">
-                      {formatDistanceToNow(parseISO(s.timestamp), {
-                        addSuffix: true,
-                        locale,
-                      })}
-                    </span>
-                    <StatBadge snap={s} />
-                    <span
-                      className="font-mono text-[10px] text-zinc-500"
-                      title={formatDate(parseISO(s.timestamp), "PPpp", { locale })}
-                    >
-                      {s.commitSha.slice(0, 7)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="max-h-44 overflow-auto">
+            {loadingSnaps && (
+              <div className="space-y-1 p-2">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="h-9 animate-pulse rounded bg-zinc-900/60"
+                  />
+                ))}
+              </div>
+            )}
+            {!loadingSnaps && selectedFile && snaps.length === 0 && (
+              <p className="px-3 py-2 text-xs text-zinc-500">
+                {t("folders.noSnapshots")}
+              </p>
+            )}
+            {!loadingSnaps &&
+              selectedFile &&
+              snaps.length > 0 &&
+              filteredSnaps.length === 0 && (
+                <p className="px-3 py-2 text-xs text-zinc-500">
+                  {t("folders.dateFilter.empty")}
+                </p>
+              )}
+            {!loadingSnaps && !selectedFile && (
+              <p className="px-3 py-2 text-xs text-zinc-500">
+                {t("folders.pickFile")}
+              </p>
+            )}
+            {!loadingSnaps &&
+              filteredSnaps.map((s) => {
+                const active = selectedSnap?.commitSha === s.commitSha;
+                return (
+                  <button
+                    key={s.commitSha}
+                    type="button"
+                    onClick={() => setSelectedSnap(s)}
+                    className={`block w-full border-b border-zinc-800 px-3 py-2 text-left text-xs transition-colors last:border-0 ${
+                      active
+                        ? "border-l-2 border-emerald-500 bg-zinc-800/80 pl-[10px] text-white"
+                        : "text-zinc-300 hover:bg-zinc-800/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 truncate">
+                        {formatDistanceToNow(parseISO(s.timestamp), {
+                          addSuffix: true,
+                          locale,
+                        })}
+                      </span>
+                      <StatBadge snap={s} />
+                      <span
+                        className="font-mono text-[10px] text-zinc-500"
+                        title={formatDate(parseISO(s.timestamp), "PPpp", { locale })}
+                      >
+                        {s.commitSha.slice(0, 7)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+          </div>
         </div>
         {selectedSnap && fileBaseName && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-400">

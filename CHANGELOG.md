@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.2] — 2026-05-11
+
+### UI
+
+- **Folders pane**: filter the snapshot list by **local calendar day** using a date picker above the list. The compare dropdown (“Pick another version…”) still lists every snapshot so you can diff against any revision. **Show all** clears the filter; switching file resets it.
+
 ## [0.4.1] — 2026-05-10
 
 ### Distribution
